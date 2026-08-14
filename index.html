@@ -1217,9 +1217,10 @@ function setHTML(){
 
   '<section><h3>Real route geometry</h3>'+
   '<p>The red line is a schematic corridor drawn between waypoints, not a surveyed track. '+
-  'Load the official AV2 GPX and it will be replaced with the real thing.</p>'+
-  '<label class="btn" for="gpx" style="display:block">Load a GPX file</label>'+
-  '<input id="gpx" type="file" accept=".gpx,application/gpx+xml,text/xml" style="display:none">'+
+  'Load the official AV2 route and it will be replaced with the real thing. '+
+  'GPX, KML and KMZ all work — no need to convert first.</p>'+
+  '<label class="btn" for="gpx" style="display:block">Load a route file</label>'+
+  '<input id="gpx" type="file" accept=".gpx,.kml,.kmz,application/gpx+xml,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,text/xml" style="display:none">'+
   '<div class="stat" id="gpxStat">'+(ROUTE.__real?"Real track loaded":"Schematic corridor")+'</div></section>'+
 
   '<section><h3>Send the huts to your map app</h3>'+
@@ -1407,36 +1408,109 @@ function cacheTiles(){
   step();
 }
 
-/* ---- GPX in ---- */
+/* ---- Track in: GPX, KML or KMZ ---- */
+function gpxStat(msg){ var el=document.getElementById("gpxStat"); if(el) el.textContent=msg; }
+
+function parseGPXtext(txt){
+  var doc=new DOMParser().parseFromString(txt,"application/xml");
+  var pts=doc.getElementsByTagName("trkpt");
+  if(!pts.length) pts=doc.getElementsByTagName("rtept");
+  var out=[];
+  for(var i=0;i<pts.length;i++){
+    var la=parseFloat(pts[i].getAttribute("lat")), lo=parseFloat(pts[i].getAttribute("lon"));
+    if(isFinite(la)&&isFinite(lo)) out.push([la,lo]);
+  }
+  return out;
+}
+function parseKMLtext(txt){
+  var doc=new DOMParser().parseFromString(txt,"application/xml");
+  var out=[];
+  // LineString / LinearRing: "lon,lat,ele lon,lat,ele" — note the reversed order
+  var lines=doc.getElementsByTagName("LineString");
+  if(!lines.length) lines=doc.getElementsByTagName("LinearRing");
+  for(var i=0;i<lines.length;i++){
+    var c=lines[i].getElementsByTagName("coordinates")[0];
+    if(!c) continue;
+    (c.textContent||"").trim().split(/\s+/).forEach(function(tok){
+      var a=tok.split(",");
+      var lo=parseFloat(a[0]), la=parseFloat(a[1]);
+      if(isFinite(la)&&isFinite(lo)) out.push([la,lo]);
+    });
+  }
+  if(out.length) return out;
+  // gx:Track uses "lon lat ele" inside gx:coord
+  var coords=doc.getElementsByTagName("coord");
+  if(!coords.length) coords=doc.getElementsByTagNameNS("*","coord");
+  for(var j=0;j<coords.length;j++){
+    var b=(coords[j].textContent||"").trim().split(/\s+/);
+    var lo2=parseFloat(b[0]), la2=parseFloat(b[1]);
+    if(isFinite(la2)&&isFinite(lo2)) out.push([la2,lo2]);
+  }
+  return out;
+}
+
+/* A .kmz is a zip. Read the central directory, pull the first .kml, inflate it. */
+function kmlFromKMZ(buf){
+  var dv=new DataView(buf), u8=new Uint8Array(buf);
+  var eocd=-1, floor=Math.max(0,u8.length-66000);
+  for(var i=u8.length-22;i>=floor;i--){
+    if(u8[i]===0x50&&u8[i+1]===0x4b&&u8[i+2]===0x05&&u8[i+3]===0x06){ eocd=i; break; }
+  }
+  if(eocd<0) return Promise.reject(new Error("not a zip"));
+  var count=dv.getUint16(eocd+10,true), p=dv.getUint32(eocd+16,true);
+  var pick=null;
+  for(var n=0;n<count;n++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    var method=dv.getUint16(p+10,true), csize=dv.getUint32(p+20,true);
+    var fnLen=dv.getUint16(p+28,true), exLen=dv.getUint16(p+30,true), cmLen=dv.getUint16(p+32,true);
+    var lho=dv.getUint32(p+42,true);
+    var name=new TextDecoder().decode(u8.subarray(p+46,p+46+fnLen));
+    if(/\.kml$/i.test(name) && !pick) pick={name:name,method:method,csize:csize,lho:lho};
+    p+=46+fnLen+exLen+cmLen;
+  }
+  if(!pick) return Promise.reject(new Error("no kml inside"));
+  // the local header's name/extra lengths can differ from the central copy
+  var lfn=dv.getUint16(pick.lho+26,true), lex=dv.getUint16(pick.lho+28,true);
+  var start=pick.lho+30+lfn+lex;
+  var raw=u8.subarray(start,start+pick.csize);
+  if(pick.method===0) return Promise.resolve(new TextDecoder().decode(raw));
+  if(typeof DecompressionStream==="undefined")
+    return Promise.reject(new Error("this browser cannot unzip"));
+  var ds=new DecompressionStream("deflate-raw");
+  var w=ds.writable.getWriter(); w.write(raw); w.close();
+  return new Response(ds.readable).text();
+}
+
 function loadGPX(ev){
   var f=ev.target.files&&ev.target.files[0];
   if(!f)return;
-  var fr=new FileReader();
-  fr.onload=function(){
-    try{
-      var doc=new DOMParser().parseFromString(fr.result,"application/xml");
-      var pts=doc.getElementsByTagName("trkpt");
-      if(!pts.length) pts=doc.getElementsByTagName("rtept");
-      if(!pts.length) throw new Error("no track points");
-      var out=[];
-      for(var i=0;i<pts.length;i++){
-        var la=parseFloat(pts[i].getAttribute("lat")), lo=parseFloat(pts[i].getAttribute("lon"));
-        if(isFinite(la)&&isFinite(lo)) out.push([la,lo]);
-      }
-      // thin to keep drawing fast
-      var stepN=Math.max(1,Math.floor(out.length/4000));
-      ROUTE=out.filter(function(_,i){return i%stepN===0});
-      ROUTE.__real=true;
-      document.getElementById("gpxStat").textContent=
-        "Real track loaded — "+out.length+" points, drawn at "+ROUTE.length;
-      document.getElementById("attrib").textContent = tilesOn
-        ? "© OpenTopoMap (CC-BY-SA) · © OpenStreetMap" : "Track from your GPX";
-      fitAll();
-    }catch(e){
-      document.getElementById("gpxStat").textContent="Could not read that file — is it a GPX with a track in it?";
-    }
-  };
-  fr.readAsText(f);
+  var name=(f.name||"").toLowerCase();
+  gpxStat("Reading "+f.name+"…");
+  var job;
+  if(/\.kmz$/.test(name)){
+    job=f.arrayBuffer().then(kmlFromKMZ).then(parseKMLtext);
+  } else if(/\.kml$/.test(name)){
+    job=f.text().then(parseKMLtext);
+  } else {
+    job=f.text().then(function(t){
+      var g=parseGPXtext(t);
+      return g.length ? g : parseKMLtext(t); // some exports are mislabelled
+    });
+  }
+  job.then(function(out){
+    if(!out||!out.length) throw new Error("no track points found");
+    var stepN=Math.max(1,Math.floor(out.length/4000));
+    ROUTE=out.filter(function(_,i){return i%stepN===0});
+    ROUTE.__real=true;
+    gpxStat("Real track loaded — "+out.length+" points, drawn at "+ROUTE.length);
+    document.getElementById("attrib").textContent = tilesOn
+      ? "© OpenTopoMap (CC-BY-SA) · © OpenStreetMap" : "Track from your file";
+    fitAll();
+    preflight();
+  }).catch(function(e){
+    gpxStat("Could not read that — "+(e&&e.message?e.message:"unknown")+
+      ". GPX, KML and KMZ are accepted; the file needs a track or a line in it.");
+  });
 }
 
 /* ---- GPX out ---- */
