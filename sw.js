@@ -1,6 +1,6 @@
 /* AV2 Field Map — offline app shell.
    Bump CACHE when you edit index.html, or the phone will keep serving the old one. */
-var CACHE = "av2-v1";
+var CACHE = "av2-v2";
 var SHELL = [
   "./",
   "./index.html",
