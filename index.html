@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#12161d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AV2">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" href="./icon-192.png">
+<title>AV2 Field Map — Aug 2026</title>
+<style>
+/* ============================================================
+   Palette: Tabacco 1:25.000 sheet + CAI signage, at dawn.
+   Red/white blaze, segnavia yellow, glacier teal, slate rock.
+   No web fonts — must render with zero network.
+   ============================================================ */
+:root{
+  --night:#12161d;
+  --rock:#1b212b;
+  --rock-2:#242c38;
+  --rule:#333d4c;
+  --lime:#d6d1c4;       /* limestone — primary text */
+  --lime-dim:#8d95a2;
+  --cai:#c0261c;        /* waymark red */
+  --cai-lift:#e04b3f;
+  --sign:#e8b23a;       /* tabella segnavia yellow */
+  --glacier:#5fa8bd;    /* water */
+  --dry:#e07a3a;        /* dry-section warning */
+  --ok:#7fa860;
+  --shadow:rgba(0,0,0,.5);
+
+  --map-bg:#20262f;
+  --map-line:#2b3340;
+
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --font-disp:"Helvetica Neue","Arial Narrow",Roboto,Helvetica,Arial,sans-serif;
+  --font-num:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+body.day{
+  --night:#e6e2d7;
+  --rock:#f2efe7;
+  --rock-2:#e2ddd0;
+  --rule:#c3bcab;
+  --lime:#1d2128;
+  --lime-dim:#5f6672;
+  --map-bg:#dfdacd;
+  --map-line:#c9c2b1;
+  --shadow:rgba(0,0,0,.18);
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overscroll-behavior:none}
+body{
+  background:var(--night);color:var(--lime);
+  font-family:var(--font-ui);font-size:15px;line-height:1.45;
+  display:flex;flex-direction:column;
+  -webkit-text-size-adjust:100%;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---------- masthead / status ---------- */
+.bar{
+  padding:calc(var(--safe-t) + 8px) 12px 8px;
+  background:var(--rock);border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;gap:10px;flex:0 0 auto;
+}
+.blaze{
+  width:13px;height:26px;flex:0 0 auto;border-radius:1px;
+  background:linear-gradient(to bottom,var(--cai) 0 33%,#fff 33% 67%,var(--cai) 67% 100%);
+}
+.mast h1{
+  margin:0;font-family:var(--font-disp);font-size:17px;font-weight:800;
+  letter-spacing:.02em;text-transform:uppercase;line-height:1;
+}
+.mast .sub{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--lime-dim);margin-top:3px}
+.mast{flex:1;min-width:0}
+.bar .ico{
+  width:36px;height:36px;border:1px solid var(--rule);border-radius:8px;
+  display:grid;place-items:center;font-size:15px;flex:0 0 auto;background:var(--rock-2);
+}
+
+/* ---------- gps strip ---------- */
+.gps{
+  flex:0 0 auto;display:flex;align-items:center;gap:0;
+  background:var(--rock-2);border-bottom:1px solid var(--rule);
+  font-family:var(--font-num);font-size:11px;
+}
+.gps div{flex:1;padding:6px 8px;min-width:0;border-right:1px solid var(--rule)}
+.gps div:last-child{border-right:0}
+.gps b{display:block;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--lime-dim);font-weight:600;font-family:var(--font-ui);margin-bottom:1px}
+.gps span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+.gps .hot{color:var(--sign)}
+
+/* ---------- map ---------- */
+#mapwrap{position:relative;flex:1 1 auto;min-height:180px;background:var(--map-bg);overflow:hidden}
+#map{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+.mapbtns{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:7px;z-index:4}
+.mapbtns button{
+  width:42px;height:42px;border-radius:10px;background:var(--rock);
+  border:1px solid var(--rule);box-shadow:0 2px 8px var(--shadow);
+  display:grid;place-items:center;font-size:17px;font-family:var(--font-disp);font-weight:700;
+}
+.mapbtns button.live{border-color:var(--glacier);color:var(--glacier)}
+.scalebar{
+  position:absolute;left:10px;bottom:12px;z-index:3;font-family:var(--font-num);
+  font-size:10px;color:var(--lime);text-shadow:0 1px 3px var(--night);pointer-events:none;
+}
+.scalebar i{display:block;height:4px;border:1px solid currentColor;border-top:0;margin-top:2px}
+.attrib{
+  position:absolute;left:10px;top:8px;z-index:3;font-size:9px;color:var(--lime-dim);
+  background:var(--rock);padding:2px 6px;border-radius:4px;opacity:.85;pointer-events:none;
+}
+
+/* ---------- water rail (signature) ---------- */
+.rail{flex:0 0 auto;background:var(--rock);border-top:1px solid var(--rule);padding:7px 12px 9px}
+.rail-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+.rail-head b{font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--lime-dim);font-weight:600}
+.rail-head span{font-family:var(--font-num);font-size:10px;color:var(--lime-dim)}
+#rail{width:100%;height:34px;display:block;touch-action:none}
+.rail-key{display:flex;gap:12px;margin-top:5px;font-size:9.5px;color:var(--lime-dim);flex-wrap:wrap}
+.rail-key i{display:inline-block;width:16px;height:4px;border-radius:2px;margin-right:4px;vertical-align:1px}
+
+/* ---------- tabs ---------- */
+.tabs{
+  flex:0 0 auto;display:flex;background:var(--rock);border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);
+}
+.tabs button{
+  flex:1;padding:10px 4px;font-family:var(--font-disp);font-size:11.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--lime-dim);
+  border-bottom:2px solid transparent;
+}
+.tabs button[aria-selected="true"]{color:var(--lime);border-bottom-color:var(--cai)}
+
+/* ---------- list ---------- */
+#panel{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding-bottom:calc(var(--safe-b) + 16px);min-height:120px}
+.searchwrap{padding:9px 12px;position:sticky;top:0;background:var(--night);z-index:2;border-bottom:1px solid var(--rule)}
+.searchwrap input{
+  width:100%;padding:9px 11px;border-radius:9px;border:1px solid var(--rule);
+  background:var(--rock);color:var(--lime);font:inherit;font-size:14px;
+}
+.searchwrap input::placeholder{color:var(--lime-dim)}
+
+.daygrp{border-bottom:1px solid var(--rule)}
+.daybar{
+  display:flex;align-items:center;gap:9px;padding:9px 12px;background:var(--rock-2);
+  position:sticky;top:0;z-index:1;
+}
+.daybar .mark{
+  width:11px;height:22px;flex:0 0 auto;border-radius:1px;
+  background:linear-gradient(to bottom,var(--cai) 0 33%,#fff 33% 67%,var(--cai) 67% 100%);
+}
+.daybar .n{font-family:var(--font-disp);font-weight:800;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+.daybar .d{font-family:var(--font-num);font-size:10.5px;color:var(--lime-dim);margin-left:auto;text-align:right}
+
+/* row */
+.row{display:flex;gap:10px;padding:10px 12px;align-items:flex-start;width:100%;text-align:left;
+  border-top:1px solid var(--rule)}
+.row:first-of-type{border-top:0}
+.row .gl{width:26px;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;padding-top:2px}
+.glyph{width:22px;height:22px;flex:0 0 auto}
+.row .body{flex:1;min-width:0}
+.row .nm{font-weight:600;font-size:14.5px;line-height:1.25}
+.row .meta{font-family:var(--font-num);font-size:11px;color:var(--lime-dim);margin-top:2px}
+.row .tags{margin-top:5px;display:flex;gap:5px;flex-wrap:wrap}
+.tag{
+  font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;
+  padding:2px 6px;border-radius:4px;border:1px solid currentColor;white-space:nowrap;
+}
+.t-bed{color:var(--cai-lift)} .t-water{color:var(--glacier)} .t-dry{color:var(--dry)}
+.t-book{color:var(--ok)} .t-haz{color:var(--sign)} .t-none{color:var(--lime-dim)}
+.row .dist{font-family:var(--font-num);font-size:11px;color:var(--glacier);flex:0 0 auto;text-align:right;padding-top:2px}
+
+/* ---------- detail sheet ---------- */
+#sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--rock);
+  border-top:2px solid var(--cai);border-radius:14px 14px 0 0;
+  max-height:82vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  transform:translateY(101%);transition:transform .22s ease;
+  box-shadow:0 -6px 24px var(--shadow);padding-bottom:calc(var(--safe-b) + 20px);
+}
+#sheet.open{transform:translateY(0)}
+.sh-grab{width:38px;height:4px;border-radius:2px;background:var(--rule);margin:8px auto 4px}
+.sh-head{padding:4px 16px 12px;border-bottom:1px solid var(--rule);display:flex;gap:11px;align-items:flex-start}
+.sh-head .body{flex:1;min-width:0}
+.sh-head h2{margin:0;font-family:var(--font-disp);font-size:19px;font-weight:800;letter-spacing:.01em;line-height:1.15}
+.sh-head .meta{font-family:var(--font-num);font-size:11.5px;color:var(--lime-dim);margin-top:3px}
+.sh-close{font-size:22px;line-height:1;color:var(--lime-dim);padding:0 2px}
+.sh-body{padding:12px 16px 4px}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:4px 10px;font-size:13.5px;margin-bottom:12px}
+.kv dt{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--lime-dim);
+  font-weight:600;padding-top:3px}
+.kv dd{margin:0}
+.sh-body h3{
+  font-family:var(--font-disp);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--lime-dim);margin:14px 0 6px;font-weight:700;
+}
+.sh-body ul{margin:0;padding-left:17px;font-size:13.5px}
+.sh-body li{margin-bottom:5px}
+.callout{
+  border-left:3px solid var(--dry);background:var(--rock-2);padding:9px 11px;
+  border-radius:0 7px 7px 0;font-size:13px;margin:10px 0;
+}
+.callout.water{border-left-color:var(--glacier)}
+.callout.haz{border-left-color:var(--sign)}
+.callout b{display:block;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;margin-bottom:3px}
+.sh-acts{display:flex;gap:8px;padding:12px 16px 0;flex-wrap:wrap}
+.sh-acts a,.sh-acts button{
+  flex:1 1 auto;text-align:center;padding:10px;border:1px solid var(--rule);border-radius:9px;
+  background:var(--rock-2);font-size:12.5px;font-weight:600;text-decoration:none;color:var(--lime);
+  min-width:110px;
+}
+
+/* ---------- settings ---------- */
+.set{padding:14px 12px 40px}
+.set section{border:1px solid var(--rule);border-radius:11px;padding:12px;margin-bottom:12px;background:var(--rock)}
+.set h3{margin:0 0 4px;font-family:var(--font-disp);font-size:12px;letter-spacing:.11em;
+  text-transform:uppercase;font-weight:800}
+.set p{margin:0 0 9px;font-size:12.5px;color:var(--lime-dim)}
+.set .btn{
+  display:block;width:100%;padding:11px;border:1px solid var(--rule);border-radius:9px;
+  background:var(--rock-2);font-size:13.5px;font-weight:600;margin-top:7px;text-align:center;
+  text-decoration:none;color:var(--lime);
+}
+.set .btn.go{border-color:var(--cai);color:var(--cai-lift)}
+.prog{height:6px;background:var(--rock-2);border-radius:3px;overflow:hidden;margin-top:9px;display:none}
+.prog i{display:block;height:100%;background:var(--glacier);width:0;transition:width .2s}
+.stat{font-family:var(--font-num);font-size:11px;color:var(--lime-dim);margin-top:6px;min-height:15px}
+.warn{font-size:11.5px;color:var(--dry);margin-top:7px;line-height:1.4}
+.tog{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--rule);font-size:13.5px}
+.tog:first-of-type{border-top:0}
+.tog button{padding:5px 13px;border:1px solid var(--rule);border-radius:20px;font-size:12px;font-weight:600}
+.tog button[aria-pressed="true"]{background:var(--cai);border-color:var(--cai);color:#fff}
+.disclaimer{font-size:11.5px;color:var(--lime-dim);line-height:1.5;padding:0 4px}
+.disclaimer strong{color:var(--dry)}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <span class="blaze" aria-hidden="true"></span>
+  <div class="mast">
+    <h1>Alta Via 2</h1>
+    <div class="sub" id="mastsub">Brixen › Feltre · Aug 2026</div>
+  </div>
+  <button class="ico" id="btnTheme" title="Day / night">◑</button>
+</header>
+
+<div class="gps" id="gpsbar">
+  <div><b>Position</b><span id="gPos">GPS off</span></div>
+  <div><b>Altitude</b><span id="gAlt">—</span></div>
+  <div><b>Next shelter</b><span id="gShelter">—</span></div>
+  <div><b>Next water</b><span id="gWater" class="hot">—</span></div>
+</div>
+
+<div id="mapwrap">
+  <canvas id="map"></canvas>
+  <div class="attrib" id="attrib">Schematic route — verify on ground</div>
+  <div class="scalebar"><span id="scaleTxt">—</span><i id="scaleBar" style="width:60px"></i></div>
+  <div class="mapbtns">
+    <button id="btnLocate" title="Follow my position">◎</button>
+    <button id="btnFit" title="Fit whole route">⤢</button>
+    <button id="btnIn" title="Zoom in">+</button>
+    <button id="btnOut" title="Zoom out">−</button>
+  </div>
+</div>
+
+<div class="rail">
+  <div class="rail-head">
+    <b>Water along the route</b>
+    <span id="railInfo">tap to jump</span>
+  </div>
+  <canvas id="rail"></canvas>
+  <div class="rail-key">
+    <span><i style="background:var(--glacier)"></i>Source / hut tap</span>
+    <span><i style="background:var(--sign)"></i>Unreliable</span>
+    <span><i style="background:var(--dry)"></i>Dry stretch</span>
+  </div>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-tab="days">Days</button>
+  <button role="tab" aria-selected="false" data-tab="near">Near me</button>
+  <button role="tab" aria-selected="false" data-tab="water">Water</button>
+  <button role="tab" aria-selected="false" data-tab="set">Setup</button>
+</nav>
+
+<main id="panel"></main>
+
+<div id="sheet" role="dialog" aria-modal="false" aria-hidden="true">
+  <div class="sh-grab"></div>
+  <div class="sh-head">
+    <svg class="glyph" id="shGlyph" viewBox="0 0 22 22" style="width:26px;height:26px"></svg>
+    <div class="body"><h2 id="shName"></h2><div class="meta" id="shMeta"></div></div>
+    <button class="sh-close" id="shClose" aria-label="Close">×</button>
+  </div>
+  <div class="sh-body" id="shBody"></div>
+  <div class="sh-acts" id="shActs"></div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   1. DATA
+   Coordinates are approximate (±100–300 m) and the route line is
+   a schematic corridor, not a surveyed track. Load the official
+   GPX in Setup to replace it with real geometry.
+   ============================================================ */
+
+var DAYS = [
+  {n:"Start", date:"Sat 15 Aug", title:"Travel to Bressanone", sub:"Brixen / Bressanone · Plose cable car"},
+  {n:"Day 1", date:"Sun 16 Aug", title:"Plose → Malga Gampen", sub:"Booked · half board · Family Messner"},
+  {n:"Day 2", date:"Mon 17 Aug", title:"Gampen → Pisciadù", sub:"~23 km · 06:00 away · longest day"},
+  {n:"Day 3", date:"Tue 18 Aug", title:"Pisciadù → Piz Boè", sub:"Sella traverse · arrive by 17:30"},
+  {n:"Day 4", date:"Wed 19 Aug", title:"Piz Boè → Passo Fedaia", sub:"Pordoi · Viel dal Pan · Trincee variant"},
+  {n:"Day 5", date:"Thu 20 Aug", title:"Fedaia → San Pellegrino", sub:"Wild camp · dusk to dawn only"},
+  {n:"Day 6", date:"Fri 21 Aug", title:"San Pellegrino → Mulaz", sub:"Booked · Passo Valles"},
+  {n:"Day 7", date:"Sat 22 Aug", title:"Mulaz → San Martino", sub:"Farangole · Pale plateau · restock"},
+  {n:"Day 8", date:"Sun 23 Aug", title:"San Martino → Pradidali", sub:"Camping · park rules apply"},
+  {n:"Day 9", date:"Mon 24 Aug", title:"Pradidali → Passo Cereda", sub:"Ball / Lede · Option A finishes"},
+  {n:"Day 10–11", date:"Tue 25 – Wed 26 Aug", title:"Cimonega → Feltre", sub:"Option B only · national park"}
+];
+
+/* type: rifugio | bivacco | guesthouse | town | pass | hazard | camp
+   water: tap | spring | unreliable | none | town  */
+var PTS = [
+  {id:"brixen", d:0, t:"town", n:"Bressanone / Brixen", alt:559, lat:46.7156, lon:11.6566,
+   w:"town", note:["Trailhead town. Plose cable car from Sant'Andrea/St. Andrä — bus 321 from the station.",
+   "Last full supermarket before the mountains. Gas canisters: outdoor shops in the old town."]},
+
+  {id:"plose", d:1, t:"pass", n:"Plose / Kreuztal", alt:2050, lat:46.6951, lon:11.7299,
+   w:"tap", note:["Top of the cable car — the AV2 starts here, heading south on path 4 / 7.",
+   "Rifugio Plose and Rossalm nearby for a last coffee and a fill."]},
+
+  {id:"genova", d:1, t:"rifugio", n:"Rifugio Genova / Schlüterhütte", alt:2297, lat:46.6407, lon:11.8058,
+   w:"tap", beds:"~60", ph:"+39 0472 670072",
+   note:["Classic AV2 hut below Sass de Putia. Reliable water and food even if you don't sleep.",
+   "Your route drops off here into Val di Funes for Gampen rather than staying high."]},
+
+  {id:"gampen", d:1, t:"guesthouse", n:"Malga Gampen / Gampenalm", alt:1852, lat:46.6424, lon:11.7742,
+   w:"tap", beds:"Booked ×2", stay:true, ph:"—", book:"Ref 2026938/K16778 · Family Messner",
+   note:["Half board. €50 deposit paid. Tourist tax in cash on departure — carry €5, their email said €2.50.",
+   "Room to be cleared by 08:30, but you're leaving at 06:00 anyway.",
+   "Confirm the early breakfast (~05:30) or a packed one the night before."],
+   flagT:"Night 1 — 16 Aug", flag:"Ask for the 05:30 breakfast when you arrive if it isn't already agreed. A 23 km day follows."},
+
+  {id:"roa", d:2, t:"pass", n:"Forcella de Roa / Kreuzkofeljoch", alt:2617, lat:46.6135, lon:11.8215,
+   w:"none", note:["Steep climb onto the Puez plateau. Cabled in places, loose scree.",
+   "Once you're up, there is no surface water until Rifugio Puez."]},
+
+  {id:"puez", d:2, t:"rifugio", n:"Rifugio Puez / Puezhütte", alt:2475, lat:46.6033, lon:11.8250,
+   w:"tap", beds:"~50", ph:"+39 0471 795365",
+   note:["Only water on the plateau. Fill everything here.",
+   "First bail-out on day 2 — if you're behind schedule this is the honest place to stop."]},
+
+  {id:"gardena", d:2, t:"pass", n:"Passo Gardena / Grödner Joch", alt:2121, lat:46.5470, lon:11.8110,
+   w:"tap", note:["Road pass. Rifugio Frara and Jimmy both here — bar, taps, toilets, bus stop.",
+   "Second and last bail-out before Val Setus. Buses run to Selva / Corvara."],
+   flagT:"Decision point", flag:"Committing to Val Setus after here means a steep cabled gully at the end of a 23 km day. If the weather is turning, take the bus."},
+
+  {id:"setus", d:2, t:"hazard", n:"Val Setus", alt:2400, lat:46.5340, lon:11.8250,
+   w:"none", note:["Steep scree and cabled gully climbing onto the Sella. Helmet worth it — stonefall from parties above.",
+   "Roughly 1 h 15 from the pass to Pisciadù. Slow with a heavy pack."]},
+
+  {id:"pisciadu", d:2, t:"rifugio", n:"Rifugio Cavazza al Pisciadù", alt:2585, lat:46.5297, lon:11.8300,
+   w:"tap", beds:"Booked ×2 dorm", stay:true, ph:"+39 0471 836292", book:"Ref PDU-2026-04-15-4818 · €111 due",
+   note:["Liner compulsory. Duvet and pillowcase provided, no towels. Shower €4.",
+   "Cards accepted but the connection often fails — carry cash.",
+   "Ask on arrival for packed lunches for the Sella traverse.",
+   "Tell them if you'll be later than 18:00."],
+   flagT:"Night 2 — 17 Aug", flag:"Dinner from 18:30, breakfast from 07:00, room by 08:00."},
+
+  {id:"boe", d:3, t:"rifugio", n:"Rifugio Boè", alt:2871, lat:46.5083, lon:11.8250,
+   w:"tap", beds:"~60", ph:"+39 0471 847303",
+   note:["Middle of the Sella plateau. Water sold, not free — the whole massif is karst with no springs.",
+   "Last fill before the Piz Boè summit push."]},
+
+  {id:"pizfassa", d:3, t:"rifugio", n:"Capanna Piz Fassa", alt:3152, lat:46.5093, lon:11.8342,
+   w:"unreliable", beds:"Booked ×2", stay:true, ph:"—", book:"Guido Bernard · €80 pp half board",
+   note:["On the actual summit of Piz Boè. Everything is carried or flown up — water is scarce and expensive.",
+   "Bring your own sheet or rent for €5. Arrive by 17:30, dinner 18:30 for everyone.",
+   "Breakfast 07:00, room vacated by 08:30.",
+   "Deposit non-refundable and the date can't be moved."],
+   flagT:"Night 3 — 18 Aug · 3152 m", flag:"Highest sleep of the trip and it will be cold and windy. Fill up at Boè on the way past — do not count on buying much water at the summit."},
+
+  {id:"forcpordoi", d:4, t:"pass", n:"Forcella Pordoi", alt:2848, lat:46.5010, lon:11.8180,
+   w:"none", note:["Rifugio Forcella Pordoi sits just here — small, seasonal, worth a stop.",
+   "The descent to Passo Pordoi is a steep, loose, well-trodden scree gully. Poles out."]},
+
+  {id:"pordoi", d:4, t:"pass", n:"Passo Pordoi", alt:2239, lat:46.4880, lon:11.8130,
+   w:"tap", note:["Road pass with hotels, bars, shops and a bus stop. Full resupply point.",
+   "Cable car up to Sass Pordoi if you want to skip the climb."]},
+
+  {id:"vieldalpan", d:4, t:"rifugio", n:"Rifugio Viel dal Pan", alt:2432, lat:46.4630, lon:11.8480,
+   w:"tap", beds:"~20", note:["On the balcony path with the classic Marmolada view. Busy at lunch.",
+   "Water and food available; a good top-up before dropping to Fedaia."]},
+
+  {id:"trincee", d:4, t:"hazard", n:"Via Ferrata delle Trincee (variant)", alt:2550, lat:46.4655, lon:11.8880,
+   w:"none", note:["The alternative to the road walk round Lago di Fedaia — Padon ridge, graded 4B, WWI tunnels and a suspension bridge.",
+   "Full via ferrata kit and helmet required. Not sensible in a storm or with a very heavy pack.",
+   "Reached from Castiglioni via path 698 to Porta Vescovo; descends past Rifugio Padon."],
+   flagT:"Optional", flag:"Lanyard energy absorbers are certified against a mass range — a 10 kg+ pack pushes you toward the top of it. Worth a second thought on a thru-hiking load."},
+
+  {id:"fedaia", d:4, t:"rifugio", n:"Rifugio Castiglioni Marmolada", alt:2044, lat:46.4570, lon:11.8720,
+   w:"tap", beds:"Booked ×2 dorm", stay:true, ph:"—", book:"Contact: Alessia",
+   note:["At Passo Fedaia by the lake. Half board booked.",
+   "Buy or carry tomorrow's dinner and breakfast here — you're self-catering at the wild camp.",
+   "Lake water is glacial melt and silty; treat and filter if you use it."],
+   flagT:"Night 4 — 19 Aug", flag:"Last staffed roof before the wild camp. Sort food and confirm a water plan for the Costabella ridge before you leave."},
+
+  {id:"contrin", d:5, t:"rifugio", n:"Rifugio Contrin", alt:2016, lat:46.4320, lon:11.7930,
+   w:"tap", beds:"~90", ph:"+39 0462 601101",
+   note:["In the Val Contrin below the Marmolada south face. Streams in the valley here — the best natural water of the whole route.",
+   "Fill properly: the Forca Rossa crossing that follows is long and dry."]},
+
+  {id:"forcarossa", d:5, t:"pass", n:"Passo di Forca Rossa", alt:2490, lat:46.4030, lon:11.7900,
+   w:"none", note:["Broad, red-earth saddle. Exposed to weather with no shelter either side.",
+   "Long, gentle descent toward Fuciade after this."]},
+
+  {id:"fuciade", d:5, t:"rifugio", n:"Rifugio Fuciade", alt:1972, lat:46.3660, lon:11.7960,
+   w:"tap", beds:"~20", note:["Meadow hut in a beautiful basin. More restaurant than refuge, and priced that way.",
+   "Reliable water, and streams in the meadows below."]},
+
+  {id:"sanpellegrino", d:5, t:"camp", n:"Passo San Pellegrino", alt:1918, lat:46.3640, lon:11.7790,
+   w:"town", stay:true,
+   note:["Road pass with hotels, a bar and a small shop. Taps and toilets.",
+   "Your wild camp is somewhere around here — pitch late, above the treeline, small tent, gone at dawn."],
+   flagT:"Night 5 — 20 Aug · wild camp", flag:"Free camping is prohibited in Trentino and fined. What's tolerated is a dusk-to-dawn bivouac: one small tent, no fire, no trace, gone early. Fill water at the pass before you go up — the Costabella ridge is dry."},
+
+  {id:"valles", d:6, t:"rifugio", n:"Capanna Passo Valles", alt:2033, lat:46.3400, lon:11.8000,
+   w:"tap", beds:"~30", note:["Road pass hut. Water, food, and a bus stop if you need to bail.",
+   "Last easy resupply before the Pale di San Martino."]},
+
+  {id:"mulaz", d:6, t:"rifugio", n:"Rifugio Mulaz", alt:2571, lat:46.3180, lon:11.8280,
+   w:"tap", beds:"Booked ×2 dorm", stay:true, ph:"—", book:"Sebastiano Zagonel",
+   note:["Under the north face of Cima del Mulaz. Half board booked.",
+   "Ask Sebastiano about conditions on Passo delle Farangole — he'll know if there's old snow in the couloir.",
+   "Carry every litre you can from here."],
+   flagT:"Night 6 — 21 Aug · last water before the plateau", flag:"The Pale di San Martino is bare limestone. Everything drains underground — no springs, no streams, nothing at all until Rifugio Rosetta. Fill absolutely full."},
+
+  {id:"farangole", d:7, t:"hazard", n:"Passo delle Farangole", alt:2814, lat:46.3030, lon:11.8400,
+   w:"none", note:["The hardest passage on the AV2 — steep, exposed, cabled, and it can hold old snow into August.",
+   "It comes right at the start of the day from Mulaz, on cold legs.",
+   "If it looks wrong, the Val Venegia descent and a road link is the honest retreat."],
+   flagT:"Crux of the route", flag:"Ask at Mulaz the night before. Microspikes are not overkill if there's snow in the couloir. Rifugio Rosetta is the bail-out on the far side."},
+
+  {id:"rosetta", d:7, t:"rifugio", n:"Rifugio Pedrotti alla Rosetta", alt:2581, lat:46.2760, lon:11.8380,
+   w:"tap", beds:"~90", ph:"+39 0439 68308",
+   note:["First water in a very long time. Fill again before dropping to San Martino.",
+   "Cable car down to San Martino runs from just below the hut if you want the knees spared."]},
+
+  {id:"sanmartino", d:7, t:"town", n:"San Martino di Castrozza", alt:1467, lat:46.2620, lon:11.7970,
+   w:"town", stay:true,
+   note:["Your resupply stop. Supermarkets, pharmacy, outdoor shops, ATMs, gas canisters.",
+   "Last real town until the finish — buy for three or four days depending on which ending you take."],
+   flagT:"Restock", flag:"Draw cash here. From this point on you're camping, and Bivacco Minazio and the Feltrine huts are the only roofs."},
+
+  {id:"pradidali", d:8, t:"rifugio", n:"Rifugio Pradidali", alt:2278, lat:46.2500, lon:11.8560,
+   w:"tap", beds:"~80", ph:"+39 0439 64180",
+   note:["In a superb amphitheatre under Cima Canali. Water and meals available without staying.",
+   "Small lake nearby, usually low by late August and not somewhere to rely on."]},
+
+  {id:"ball", d:9, t:"pass", n:"Passo di Ball / Passo delle Lede", alt:2443, lat:46.2610, lon:11.8480,
+   w:"none", note:["Cabled crossings either side. The Lede descent that follows is a long 1300 m drop.",
+   "Nothing to drink between Pradidali and the Minazio spring — and that one often isn't running."]},
+
+  {id:"minazio", d:9, t:"bivacco", n:"Bivacco Carlo Minazio", alt:2294, lat:46.2380, lon:11.8720,
+   w:"unreliable", beds:"12 · unmanned", ph:"CAI Padova",
+   note:["Wood and metal, permanently open, no booking. Two rooms — 3 and 9 bunks. Table and benches, no cooking kit, no stove.",
+   "Spring roughly 10 minutes below, marked with red paint dots under the Cima del Conte wall. It is often dry.",
+   "Draws climbers as well as AV2 walkers and is named in the Italian mountain press as one that gets crowded."],
+   flagT:"Bonus, not a plan", flag:"12 places against peak-August traffic. Arrive by mid-afternoon or expect the tent. Fallback pitch: keep descending 711A into the trees toward the Canali river."},
+
+  {id:"treviso", d:9, t:"rifugio", n:"Rifugio Treviso", alt:1631, lat:46.2280, lon:11.8850,
+   w:"tap", beds:"~40", ph:"+39 0439 62311",
+   note:["Down in the trees in Val Canali. Water, meals, and a proper roof if the camping isn't working out.",
+   "Streams in the valley below here — reliable, and the first easy natural water since Contrin."]},
+
+  {id:"cereda", d:9, t:"pass", n:"Passo Cereda", alt:1361, lat:46.1930, lon:11.9150,
+   w:"tap", note:["Road pass with a rifugio and a bus stop. Dolomiti Bus down to Fiera di Primiero.",
+   "Check 2026 summer timings locally — they may not be posted online in advance."],
+   flagT:"Option A finishes here", flag:"Bus to Fiera di Primiero, then onward transport. Option B carries on over the Cimonega and Vette Feltrine for two more days."},
+
+  {id:"feltrebiv", d:10, t:"bivacco", n:"Bivacco Feltre + Walter Bodo", alt:1930, lat:46.1560, lon:11.9270,
+   w:"tap", beds:"~19–21 · unmanned",
+   note:["Pian della Regina in the Cimonega. Two metal buildings — the 1959 hut has 4 camp beds, the 1972 one has 15–17 with mattresses and blankets, plus a veranda.",
+   "Water piped to the site, and ponds about 10 minutes north-west. No fireplace, no heating.",
+   "The biggest unmanned option on the whole route."],
+   flagT:"Fallback pitch", flag:"Meadows around Casera Cimonega and the woods below. You're inside Parco Nazionale Dolomiti Bellunesi from here — camping is prohibited and actively patrolled."},
+
+  {id:"boz", d:10, t:"rifugio", n:"Rifugio Boz", alt:1718, lat:46.1130, lon:11.8990,
+   w:"tap", beds:"34", note:["On CAI 801, the gateway to the Cimonega group.",
+   "Sells water and food even if you don't sleep. Plan the day around it."]},
+
+  {id:"dalpiaz", d:10, t:"rifugio", n:"Rifugio Dal Piaz", alt:1993, lat:46.0620, lon:11.8800,
+   w:"tap", beds:"22 + 4 winter", ph:"info@rifugiodalpiaz.com",
+   note:["Run by Alex D'Incà and Christian Gris. Four-place winter room attached if the hut is full.",
+   "Last water before the descent. The Vette Feltrine between here and Boz is genuinely dry."]},
+
+  {id:"croce", d:10, t:"pass", n:"Croce d'Aune", alt:1015, lat:46.0480, lon:11.8630,
+   w:"tap", note:["End of the mountain walking. Bar, and a bus link down to Feltre.",
+   "Sixteen kilometres of road to Feltre if you walk it — most people don't."]},
+
+  {id:"feltre", d:10, t:"town", n:"Feltre", alt:325, lat:46.0180, lon:11.9060,
+   w:"town", note:["The finish. Rail station with connections to Venice and Padua.",
+   "Walled old town up the hill is worth the extra climb if your legs have anything left."]}
+];
+
+/* Stretches with no water between the two named points. */
+var DRY = [
+  {from:"roa", to:"puez", n:"Puez plateau", note:"Karst. Nothing between the forcella and the hut."},
+  {from:"pisciadu", to:"boe", n:"Sella group", note:"Entirely karst. Every drop is bought at a hut."},
+  {from:"boe", to:"pordoi", n:"Piz Boè summit", note:"Water at the Capanna is scarce and expensive. Fill at Boè."},
+  {from:"fedaia", to:"contrin", n:"Fedaia to Contrin", note:"Lake water is silty glacial melt. Treat it or wait for Contrin."},
+  {from:"contrin", to:"fuciade", n:"Forca Rossa", note:"Long exposed crossing, no shelter, no water."},
+  {from:"sanpellegrino", to:"valles", n:"Costabella ridge", note:"High and dry. Fill at the pass."},
+  {from:"mulaz", to:"rosetta", n:"Pale di San Martino", note:"Bare limestone desert. Everything drains underground. The single most important fill of the trip."},
+  {from:"pradidali", to:"minazio", n:"Ball and Lede", note:"And the Minazio spring is often dry — treat Pradidali as your source."},
+  {from:"boz", to:"dalpiaz", n:"Vette Feltrine", note:"Very few sources. Both huts sell water — plan around them, don't hope for springs."}
+];
+
+var HELP = {
+  emergency:"112",
+  meteo:[
+    ["Meteotrentino","Trentino — Pale, San Pellegrino, Rosetta. Thunderstorm probability by time band."],
+    ["ARPAV Dolomiti Meteo","Veneto — Marmolada, Agordino, Feltrine. The one guides use."],
+    ["Meteo Südtirol","The northern sections — Plose, Puez, Sella."],
+    ["Windy, ICON-D2 model","Convection-permitting. Look at CAPE, not the rain icon."]
+  ]
+};
+
+/* Schematic corridor. Replaced entirely if you load a GPX. */
+var ROUTE = [
+  [46.6951,11.7299],[46.6800,11.7480],[46.6620,11.7700],[46.6500,11.7900],[46.6407,11.8058],
+  [46.6424,11.7742],[46.6300,11.7950],[46.6135,11.8215],[46.6033,11.8250],[46.5850,11.8300],
+  [46.5650,11.8180],[46.5470,11.8110],[46.5340,11.8250],[46.5297,11.8300],[46.5180,11.8270],
+  [46.5083,11.8250],[46.5093,11.8342],[46.5010,11.8180],[46.4880,11.8130],[46.4750,11.8280],
+  [46.4630,11.8480],[46.4570,11.8720],[46.4450,11.8300],[46.4320,11.7930],[46.4180,11.7880],
+  [46.4030,11.7900],[46.3850,11.7930],[46.3660,11.7960],[46.3640,11.7790],[46.3520,11.7880],
+  [46.3400,11.8000],[46.3300,11.8150],[46.3180,11.8280],[46.3030,11.8400],[46.2900,11.8420],
+  [46.2760,11.8380],[46.2680,11.8180],[46.2620,11.7970],[46.2560,11.8250],[46.2500,11.8560],
+  [46.2610,11.8480],[46.2450,11.8650],[46.2380,11.8720],[46.2300,11.8800],[46.2280,11.8850],
+  [46.2120,11.9000],[46.1930,11.9150],[46.1750,11.9250],[46.1560,11.9270],[46.1350,11.9100],
+  [46.1130,11.8990],[46.0950,11.8900],[46.0780,11.8850],[46.0620,11.8800],[46.0480,11.8630],
+  [46.0180,11.9060]
+];
+
+/* ============================================================
+   2. GEO HELPERS
+   ============================================================ */
+var R = 6371008.8;
+function rad(x){return x*Math.PI/180}
+function dist(a,b,c,d){ // metres, haversine
+  var p=rad(a),q=rad(c),dp=rad(c-a),dl=rad(d-b);
+  var h=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p)*Math.cos(q)*Math.sin(dl/2)*Math.sin(dl/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+function bearing(a,b,c,d){
+  var p=rad(a),q=rad(c),dl=rad(d-b);
+  var y=Math.sin(dl)*Math.cos(q);
+  var x=Math.cos(p)*Math.sin(q)-Math.sin(p)*Math.cos(q)*Math.cos(dl);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+function compass(deg){
+  var c=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return c[Math.round(deg/22.5)%16];
+}
+function fmtD(m){
+  if(m==null)return"—";
+  if(m<1000)return Math.round(m)+" m";
+  return (m/1000).toFixed(m<10000?1:0)+" km";
+}
+/* Web Mercator, normalised 0..1 */
+function mx(lon){return (lon+180)/360}
+function my(lat){
+  var s=Math.sin(rad(lat));
+  return 0.5-Math.log((1+s)/(1-s))/(4*Math.PI);
+}
+function unmx(x){return x*360-180}
+function unmy(y){
+  var n=Math.PI-2*Math.PI*y;
+  return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
+}
+
+var byId={};
+PTS.forEach(function(p){byId[p.id]=p});
+
+/* cumulative schematic distance for each point, for the water rail */
+(function(){
+  var acc=0, prev=null;
+  PTS.forEach(function(p){
+    if(prev) acc+=dist(prev.lat,prev.lon,p.lat,p.lon);
+    p.km=acc; prev=p;
+  });
+  var total=acc||1;
+  PTS.forEach(function(p){p.frac=p.km/total});
+})();
+
+/* ============================================================
+   3. MAP RENDERER
+   ============================================================ */
+var cv=document.getElementById("map"), cx=cv.getContext("2d");
+var view={cx:0.5,cy:0.5,z:11}; // centre in normalised mercator + zoom
+var dpr=1, W=0, H=0;
+var tilesOn=false, tileMem={}, tileFails=0;
+var TILE_URL="https://tile.opentopomap.org/{z}/{x}/{y}.png";
+var here=null, follow=false, sel=null;
+
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  var r=cv.parentNode.getBoundingClientRect();
+  W=r.width; H=r.height;
+  cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+  cx.setTransform(dpr,0,0,dpr,0,0);
+  var rr=document.getElementById("rail");
+  rr.width=Math.round(rr.parentNode.clientWidth*dpr-24*dpr); rr.height=Math.round(34*dpr);
+  rr.style.height="34px";
+  draw(); drawRail();
+}
+function scale(){return 256*Math.pow(2,view.z)}
+function toScreen(lat,lon){
+  var s=scale();
+  return [ (mx(lon)-view.cx)*s + W/2, (my(lat)-view.cy)*s + H/2 ];
+}
+function toLatLon(px,py){
+  var s=scale();
+  return [ unmy((py-H/2)/s+view.cy), unmx((px-W/2)/s+view.cx) ];
+}
+function css(v){return getComputedStyle(document.body).getPropertyValue(v).trim()}
+
+function drawTiles(){
+  if(!tilesOn) return;
+  var z=Math.max(3,Math.min(16,Math.round(view.z)));
+  var n=Math.pow(2,z), s=scale(), ts=256*Math.pow(2,view.z-z);
+  var x0=Math.floor((view.cx-(W/2)/s)*n), x1=Math.floor((view.cx+(W/2)/s)*n);
+  var y0=Math.floor((view.cy-(H/2)/s)*n), y1=Math.floor((view.cy+(H/2)/s)*n);
+  for(var x=x0;x<=x1;x++)for(var y=y0;y<=y1;y++){
+    if(y<0||y>=n) continue;
+    var xx=((x%n)+n)%n, k=z+"/"+xx+"/"+y;
+    var img=tileMem[k];
+    if(img===undefined){ tileMem[k]=null; loadTile(z,xx,y,k); continue; }
+    if(!img||!img.complete||!img.naturalWidth) continue;
+    var sx=(x/n-view.cx)*s+W/2, sy=(y/n-view.cy)*s+H/2;
+    try{ cx.drawImage(img,sx,sy,ts+1,ts+1); }catch(e){}
+  }
+}
+function loadTile(z,x,y,k){
+  if(tileFails>12) return;
+  var img=new Image();
+  img.crossOrigin="anonymous";
+  img.onload=function(){ tileMem[k]=img; tileFails=0; idbPut(k,img.src); requestDraw(); };
+  img.onerror=function(){ tileMem[k]=false; tileFails++; };
+  idbGet(k).then(function(blobUrl){
+    img.src = blobUrl || TILE_URL.replace("{z}",z).replace("{x}",x).replace("{y}",y);
+  }).catch(function(){
+    img.src = TILE_URL.replace("{z}",z).replace("{x}",x).replace("{y}",y);
+  });
+}
+
+function drawGrid(){
+  cx.strokeStyle=css("--map-line"); cx.lineWidth=1;
+  var step = view.z>13 ? 0.01 : view.z>11 ? 0.05 : 0.1;
+  var tl=toLatLon(0,0), br=toLatLon(W,H);
+  cx.globalAlpha=.55;
+  for(var la=Math.floor(br[0]/step)*step; la<=tl[0]+step; la+=step){
+    var p=toScreen(la,tl[1]); cx.beginPath();cx.moveTo(0,p[1]);cx.lineTo(W,p[1]);cx.stroke();
+  }
+  for(var lo=Math.floor(tl[1]/step)*step; lo<=br[1]+step; lo+=step){
+    var q=toScreen(tl[0],lo); cx.beginPath();cx.moveTo(q[0],0);cx.lineTo(q[0],H);cx.stroke();
+  }
+  cx.globalAlpha=1;
+}
+
+function drawRoute(){
+  if(ROUTE.length<2) return;
+  cx.lineJoin="round"; cx.lineCap="round";
+  // white casing, then red overprint — Tabacco convention
+  cx.strokeStyle="rgba(255,255,255,.55)"; cx.lineWidth=6;
+  strokePath();
+  cx.strokeStyle=css("--cai"); cx.lineWidth=3;
+  strokePath();
+  function strokePath(){
+    cx.beginPath();
+    for(var i=0;i<ROUTE.length;i++){
+      var p=toScreen(ROUTE[i][0],ROUTE[i][1]);
+      if(i===0)cx.moveTo(p[0],p[1]); else cx.lineTo(p[0],p[1]);
+    }
+    cx.stroke();
+  }
+}
+
+var COLS={rifugio:"--cai-lift",bivacco:"--sign",guesthouse:"--cai-lift",town:"--lime",
+  pass:"--lime-dim",hazard:"--sign",camp:"--ok"};
+
+function markerPath(t,x,y,r){
+  cx.beginPath();
+  if(t==="rifugio"||t==="guesthouse"){ // hut: house pentagon
+    cx.moveTo(x-r,y+r); cx.lineTo(x-r,y-r*0.25); cx.lineTo(x,y-r*1.15);
+    cx.lineTo(x+r,y-r*0.25); cx.lineTo(x+r,y+r); cx.closePath();
+  } else if(t==="bivacco"){ // barrel: rounded box
+    cx.moveTo(x-r,y+r*.7); cx.lineTo(x-r,y-r*.2);
+    cx.quadraticCurveTo(x,y-r*1.4,x+r,y-r*.2); cx.lineTo(x+r,y+r*.7); cx.closePath();
+  } else if(t==="hazard"){ // triangle
+    cx.moveTo(x,y-r*1.15); cx.lineTo(x+r*1.1,y+r*.8); cx.lineTo(x-r*1.1,y+r*.8); cx.closePath();
+  } else if(t==="town"){ cx.arc(x,y,r*.95,0,7);
+  } else if(t==="camp"){ // tent
+    cx.moveTo(x,y-r*1.1); cx.lineTo(x+r*1.1,y+r*.85); cx.lineTo(x-r*1.1,y+r*.85); cx.closePath();
+  } else { // pass: bowtie
+    cx.moveTo(x-r,y-r*.85); cx.lineTo(x-r*.2,y); cx.lineTo(x-r,y+r*.85);
+    cx.lineTo(x+r,y+r*.85); cx.lineTo(x+r*.2,y); cx.lineTo(x+r,y-r*.85); cx.closePath();
+  }
+}
+
+function drawMarkers(){
+  var showLabels = view.z>=11.4;
+  PTS.forEach(function(p){
+    var s=toScreen(p.lat,p.lon);
+    if(s[0]<-60||s[0]>W+60||s[1]<-40||s[1]>H+40) return;
+    var isSel = sel && sel.id===p.id;
+    var r = p.stay ? 9 : (p.t==="pass"?6:7.5);
+    if(isSel) r+=3;
+    // water halo
+    if(p.w==="tap"||p.w==="town"){
+      cx.beginPath(); cx.arc(s[0],s[1],r+5,0,7);
+      cx.strokeStyle=css("--glacier"); cx.globalAlpha=.55; cx.lineWidth=2; cx.stroke(); cx.globalAlpha=1;
+    }
+    markerPath(p.t,s[0],s[1],r);
+    cx.fillStyle=css(COLS[p.t]||"--lime"); cx.fill();
+    cx.strokeStyle=css("--night"); cx.lineWidth=1.6; cx.stroke();
+    if(p.stay){ // booked bed: white dot in the middle
+      cx.beginPath(); cx.arc(s[0],s[1],2.4,0,7); cx.fillStyle=css("--night"); cx.fill();
+    }
+    if(showLabels||isSel||p.stay){
+      var lbl=p.n.replace(/^Rifugio |^Bivacco |^Capanna /,"");
+      if(lbl.length>22) lbl=lbl.slice(0,21)+"…";
+      cx.font="600 11px "+css("--font-ui");
+      var tw=cx.measureText(lbl).width;
+      var lx=s[0]+r+5, ly=s[1]+4;
+      if(lx+tw>W-6){ lx=s[0]-r-5-tw; }
+      cx.fillStyle=css("--night"); cx.globalAlpha=.72;
+      cx.fillRect(lx-3,ly-11,tw+6,15); cx.globalAlpha=1;
+      cx.fillStyle=css("--lime"); cx.fillText(lbl,lx,ly);
+    }
+  });
+}
+
+function drawMe(){
+  if(!here) return;
+  var s=toScreen(here.lat,here.lon);
+  if(here.acc){
+    var m=here.acc/(156543.03392*Math.cos(rad(here.lat))/Math.pow(2,view.z));
+    if(m>4){ cx.beginPath();cx.arc(s[0],s[1],Math.min(m,W),0,7);
+      cx.fillStyle=css("--glacier");cx.globalAlpha=.12;cx.fill();cx.globalAlpha=1; }
+  }
+  cx.beginPath();cx.arc(s[0],s[1],8,0,7);
+  cx.fillStyle=css("--glacier");cx.fill();
+  cx.strokeStyle="#fff";cx.lineWidth=2.5;cx.stroke();
+}
+
+function drawScale(){
+  var mpp=156543.03392*Math.cos(rad(unmy(view.cy)))/Math.pow(2,view.z);
+  var target=90*mpp, nice=[50,100,200,500,1000,2000,5000,10000,20000,50000];
+  var pick=nice[0];
+  for(var i=0;i<nice.length;i++){ if(nice[i]<=target) pick=nice[i]; }
+  document.getElementById("scaleBar").style.width=(pick/mpp)+"px";
+  document.getElementById("scaleTxt").textContent = pick>=1000?(pick/1000)+" km":pick+" m";
+}
+
+var rafPending=false;
+function requestDraw(){ if(rafPending)return; rafPending=true; requestAnimationFrame(function(){rafPending=false;draw()}); }
+function draw(){
+  if(!W)return;
+  cx.fillStyle=css("--map-bg"); cx.fillRect(0,0,W,H);
+  drawTiles(); drawGrid(); drawRoute(); drawMarkers(); drawMe(); drawScale();
+}
+
+/* ---- interaction ---- */
+var ptrs={}, lastDist=0, moved=false;
+cv.addEventListener("pointerdown",function(e){
+  cv.setPointerCapture(e.pointerId);
+  ptrs[e.pointerId]={x:e.clientX,y:e.clientY}; moved=false; lastDist=0;
+});
+cv.addEventListener("pointermove",function(e){
+  if(!ptrs[e.pointerId])return;
+  var ks=Object.keys(ptrs);
+  if(ks.length===1){
+    var p=ptrs[e.pointerId], dx=e.clientX-p.x, dy=e.clientY-p.y;
+    if(Math.abs(dx)+Math.abs(dy)>3){moved=true; follow=false; setLocateBtn();}
+    var s=scale(); view.cx-=dx/s; view.cy-=dy/s;
+    view.cy=Math.max(0,Math.min(1,view.cy));
+    ptrs[e.pointerId]={x:e.clientX,y:e.clientY};
+    requestDraw();
+  } else if(ks.length===2){
+    moved=true;
+    ptrs[e.pointerId]={x:e.clientX,y:e.clientY};
+    var a=ptrs[ks[0]],b=ptrs[ks[1]];
+    var d=Math.hypot(a.x-b.x,a.y-b.y);
+    if(lastDist){
+      var rc=cv.getBoundingClientRect();
+      follow=false; setLocateBtn();
+      zoomAt(Math.log2(d/lastDist), (a.x+b.x)/2-rc.left, (a.y+b.y)/2-rc.top);
+    }
+    lastDist=d;
+  }
+});
+function endPtr(e){
+  if(ptrs[e.pointerId] && !moved && Object.keys(ptrs).length===1) tap(e);
+  delete ptrs[e.pointerId];
+  if(Object.keys(ptrs).length<2) lastDist=0;
+}
+cv.addEventListener("pointerup",endPtr);
+cv.addEventListener("pointercancel",function(e){delete ptrs[e.pointerId];lastDist=0});
+cv.addEventListener("wheel",function(e){
+  e.preventDefault();
+  var r=cv.getBoundingClientRect();
+  zoomAt(-e.deltaY*0.0022, e.clientX-r.left, e.clientY-r.top);
+},{passive:false});
+
+function zoomAt(dz,px,py){
+  var before=toLatLon(px,py);
+  view.z=Math.max(8,Math.min(16,view.z+dz));
+  var after=toLatLon(px,py);
+  view.cx+=mx(before[1])-mx(after[1]);
+  view.cy+=my(before[0])-my(after[0]);
+  requestDraw();
+}
+function tap(e){
+  var r=cv.getBoundingClientRect(), px=e.clientX-r.left, py=e.clientY-r.top;
+  var best=null,bd=1e9;
+  PTS.forEach(function(p){
+    var s=toScreen(p.lat,p.lon), d=Math.hypot(s[0]-px,s[1]-py);
+    if(d<bd){bd=d;best=p}
+  });
+  if(best&&bd<28) openSheet(best);
+}
+
+function fitAll(){
+  var la1=90,la2=-90,lo1=180,lo2=-180;
+  PTS.forEach(function(p){
+    la1=Math.min(la1,p.lat);la2=Math.max(la2,p.lat);
+    lo1=Math.min(lo1,p.lon);lo2=Math.max(lo2,p.lon);
+  });
+  var x1=mx(lo1),x2=mx(lo2),y1=my(la2),y2=my(la1);
+  view.cx=(x1+x2)/2; view.cy=(y1+y2)/2;
+  var zx=Math.log2((W*0.86)/(256*(x2-x1))), zy=Math.log2((H*0.86)/(256*(y2-y1)));
+  view.z=Math.max(8,Math.min(16,Math.min(zx,zy)));
+  requestDraw();
+}
+function centreOn(lat,lon,z){
+  view.cx=mx(lon); view.cy=my(lat);
+  if(z) view.z=z;
+  requestDraw();
+}
+
+document.getElementById("btnIn").onclick=function(){zoomAt(0.8,W/2,H/2)};
+document.getElementById("btnOut").onclick=function(){zoomAt(-0.8,W/2,H/2)};
+document.getElementById("btnFit").onclick=fitAll;
+
+/* ============================================================
+   4. WATER RAIL
+   ============================================================ */
+function railSegments(){
+  var segs=[], sorted=PTS.slice().sort(function(a,b){return a.frac-b.frac});
+  for(var i=0;i<sorted.length-1;i++){
+    var a=sorted[i], b=sorted[i+1];
+    var d=DRY.filter(function(x){return x.from===a.id&&x.to===b.id})[0];
+    var kind = d ? "dry" : (a.w==="none"||b.w==="none") ? "dry"
+      : (a.w==="unreliable"||b.w==="unreliable") ? "warn" : "ok";
+    segs.push({a:a.frac,b:b.frac,kind:kind,name:d?d.n:null,note:d?d.note:null,from:a,to:b});
+  }
+  return segs;
+}
+function drawRail(){
+  var c=document.getElementById("rail"), g=c.getContext("2d");
+  var w=c.width/dpr, h=c.height/dpr;
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,w,h);
+  var y=13, bh=9;
+  railSegments().forEach(function(s){
+    var x=s.a*w, ww=Math.max(1,(s.b-s.a)*w);
+    g.fillStyle = s.kind==="dry"?css("--dry") : s.kind==="warn"?css("--sign") : css("--glacier");
+    g.globalAlpha = s.kind==="dry"?0.85:1;
+    g.fillRect(x,y,ww,bh);
+    g.globalAlpha=1;
+    if(s.kind==="dry"){ // hatch
+      g.strokeStyle=css("--night"); g.lineWidth=1; g.globalAlpha=.5;
+      for(var hx=x;hx<x+ww;hx+=4){ g.beginPath();g.moveTo(hx,y);g.lineTo(hx-4,y+bh);g.stroke(); }
+      g.globalAlpha=1;
+    }
+  });
+  // stay markers
+  PTS.forEach(function(p){
+    if(!p.stay)return;
+    var x=p.frac*w;
+    g.fillStyle=css("--cai"); g.fillRect(x-1.5,y-5,3,bh+10);
+  });
+  // me
+  if(here){
+    var nearest=null,nd=1e9;
+    PTS.forEach(function(p){var d=dist(here.lat,here.lon,p.lat,p.lon); if(d<nd){nd=d;nearest=p}});
+    if(nearest){
+      var x=nearest.frac*w;
+      g.beginPath(); g.moveTo(x,y+bh+3); g.lineTo(x-4,y+bh+9); g.lineTo(x+4,y+bh+9); g.closePath();
+      g.fillStyle=css("--glacier"); g.fill();
+    }
+  }
+  g.font="600 9px "+css("--font-ui");
+  g.fillStyle=css("--lime-dim");
+  g.fillText("Brixen",0,8);
+  var t="Feltre"; g.fillText(t,w-g.measureText(t).width,8);
+}
+document.getElementById("rail").addEventListener("pointerdown",function(e){
+  var r=this.getBoundingClientRect(), f=(e.clientX-r.left)/r.width;
+  var best=null,bd=9;
+  PTS.forEach(function(p){var d=Math.abs(p.frac-f); if(d<bd){bd=d;best=p}});
+  if(best){ openSheet(best); }
+});
+
+/* ============================================================
+   5. GEOLOCATION
+   ============================================================ */
+var watchId=null;
+function startGPS(){
+  if(!navigator.geolocation){ document.getElementById("gPos").textContent="No GPS"; return; }
+  if(watchId!==null) return;
+  document.getElementById("gPos").textContent="Acquiring…";
+  watchId=navigator.geolocation.watchPosition(function(pos){
+    here={lat:pos.coords.latitude,lon:pos.coords.longitude,
+      alt:pos.coords.altitude,acc:pos.coords.accuracy};
+    updateGPS();
+    if(follow) centreOn(here.lat,here.lon);
+    requestDraw(); drawRail();
+    if(activeTab==="near") render();
+  },function(err){
+    document.getElementById("gPos").textContent = err.code===1?"Permission denied":"No fix";
+  },{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+}
+function updateGPS(){
+  if(!here)return;
+  document.getElementById("gPos").textContent=
+    here.lat.toFixed(4)+", "+here.lon.toFixed(4)+(here.acc?" ±"+Math.round(here.acc)+"m":"");
+  document.getElementById("gAlt").textContent= here.alt!=null?Math.round(here.alt)+" m":"—";
+  var shel=nearest(function(p){return p.t==="rifugio"||p.t==="bivacco"||p.t==="guesthouse"||p.t==="town"});
+  var wat =nearest(function(p){return p.w==="tap"||p.w==="town"});
+  document.getElementById("gShelter").textContent= shel?shortName(shel.p)+" "+fmtD(shel.d):"—";
+  document.getElementById("gWater").textContent= wat?shortName(wat.p)+" "+fmtD(wat.d):"—";
+}
+function shortName(p){return p.n.replace(/^(Rifugio|Bivacco|Capanna|Malga) /,"").split(" /")[0]}
+function nearest(filter){
+  if(!here)return null;
+  var best=null,bd=1e12;
+  PTS.forEach(function(p){
+    if(filter&&!filter(p))return;
+    var d=dist(here.lat,here.lon,p.lat,p.lon);
+    if(d<bd){bd=d;best=p}
+  });
+  return best?{p:best,d:bd}:null;
+}
+function setLocateBtn(){
+  document.getElementById("btnLocate").classList.toggle("live",follow);
+}
+document.getElementById("btnLocate").onclick=function(){
+  startGPS(); follow=!follow; setLocateBtn();
+  if(follow&&here) centreOn(here.lat,here.lon,Math.max(view.z,13));
+};
+
+/* ============================================================
+   6. PANEL / LIST
+   ============================================================ */
+var activeTab="days", query="";
+var panel=document.getElementById("panel");
+
+function glyphSVG(p){
+  var col={rifugio:"var(--cai-lift)",guesthouse:"var(--cai-lift)",bivacco:"var(--sign)",
+    town:"var(--lime)",pass:"var(--lime-dim)",hazard:"var(--sign)",camp:"var(--ok)"}[p.t]||"var(--lime)";
+  var d={
+    rifugio:"M3 19V9.5L11 3l8 6.5V19H3z", guesthouse:"M3 19V9.5L11 3l8 6.5V19H3z",
+    bivacco:"M4 19v-7a7 7 0 0114 0v7H4z",
+    hazard:"M11 2l9 17H2L11 2z", camp:"M11 3l9 16H2L11 3z",
+    town:"M11 3a8 8 0 100 16 8 8 0 000-16z",
+    pass:"M3 4l6 7-6 7h16l-6-7 6-7H3z"
+  }[p.t]||"M11 3a8 8 0 100 16 8 8 0 000-16z";
+  return '<svg class="glyph" viewBox="0 0 22 22" aria-hidden="true"><path d="'+d+'" fill="'+col+'"/></svg>';
+}
+function tagsFor(p){
+  var t=[];
+  if(p.stay) t.push('<span class="tag t-book">'+(p.book?"Booked":"Night")+'</span>');
+  if(p.beds) t.push('<span class="tag t-bed">'+p.beds+'</span>');
+  if(p.w==="tap"||p.w==="town") t.push('<span class="tag t-water">Water</span>');
+  else if(p.w==="unreliable") t.push('<span class="tag t-dry">Water unreliable</span>');
+  else if(p.w==="none") t.push('<span class="tag t-none">No water</span>');
+  if(p.t==="hazard") t.push('<span class="tag t-haz">Care</span>');
+  return t.join("");
+}
+function rowHTML(p,showDist){
+  var d="";
+  if(showDist&&here){ var m=dist(here.lat,here.lon,p.lat,p.lon);
+    d='<div class="dist">'+fmtD(m)+'<br>'+compass(bearing(here.lat,here.lon,p.lat,p.lon))+'</div>'; }
+  return '<button class="row" data-id="'+p.id+'">'+
+    '<span class="gl">'+glyphSVG(p)+'</span>'+
+    '<span class="body"><span class="nm">'+p.n+'</span>'+
+    '<span class="meta">'+p.alt+' m · '+p.lat.toFixed(4)+', '+p.lon.toFixed(4)+'</span>'+
+    '<span class="tags">'+tagsFor(p)+'</span></span>'+d+'</button>';
+}
+function matches(p){
+  if(!query)return true;
+  var q=query.toLowerCase();
+  return (p.n+" "+(p.note||[]).join(" ")+" "+(p.book||"")).toLowerCase().indexOf(q)>-1;
+}
+
+function render(){
+  var h="";
+  if(activeTab!=="set"){
+    h+='<div class="searchwrap"><input id="q" type="search" placeholder="Search huts, passes, notes…" value="'+
+      query.replace(/"/g,"&quot;")+'"></div>';
+  }
+  if(activeTab==="days"){
+    DAYS.forEach(function(day,i){
+      var list=PTS.filter(function(p){return p.d===i&&matches(p)});
+      if(!list.length)return;
+      h+='<section class="daygrp"><div class="daybar"><span class="mark"></span>'+
+        '<span><span class="n">'+day.n+' · '+day.title+'</span><br>'+
+        '<span style="font-size:11px;color:var(--lime-dim)">'+day.sub+'</span></span>'+
+        '<span class="d">'+day.date+'</span></div>';
+      list.forEach(function(p){h+=rowHTML(p,false)});
+      h+='</section>';
+    });
+  } else if(activeTab==="near"){
+    if(!here){
+      h+='<div style="padding:26px 18px;text-align:center;color:var(--lime-dim)">'+
+        '<p style="font-size:14px">Nothing to sort by yet.</p>'+
+        '<button class="btn" id="askgps" style="display:inline-block;padding:11px 20px;border:1px solid var(--cai);border-radius:9px;color:var(--cai-lift);font-weight:600">Turn on GPS</button></div>';
+    } else {
+      var sorted=PTS.filter(matches).map(function(p){
+        return {p:p,d:dist(here.lat,here.lon,p.lat,p.lon)};
+      }).sort(function(a,b){return a.d-b.d});
+      h+='<div class="daygrp"><div class="daybar"><span class="mark"></span>'+
+        '<span class="n">Sorted by distance</span><span class="d">straight line</span></div>';
+      sorted.forEach(function(o){h+=rowHTML(o.p,true)});
+      h+='</div>';
+    }
+  } else if(activeTab==="water"){
+    h+='<div class="daygrp"><div class="daybar"><span class="mark"></span>'+
+      '<span class="n">Dry stretches</span><span class="d">carry through these</span></div>';
+    DRY.forEach(function(s){
+      var a=byId[s.from],b=byId[s.to];
+      h+='<div style="padding:11px 12px;border-top:1px solid var(--rule)">'+
+        '<div style="font-weight:600;font-size:14px;color:var(--dry)">'+s.n+'</div>'+
+        '<div class="meta" style="font-family:var(--font-num);font-size:11px;color:var(--lime-dim);margin:2px 0 4px">'+
+        shortName(a)+' → '+shortName(b)+' · '+fmtD(dist(a.lat,a.lon,b.lat,b.lon))+' direct</div>'+
+        '<div style="font-size:13px">'+s.note+'</div></div>';
+    });
+    h+='</div><div class="daygrp"><div class="daybar"><span class="mark"></span>'+
+      '<span class="n">Where you can fill</span><span class="d">taps and sources</span></div>';
+    PTS.filter(function(p){return (p.w==="tap"||p.w==="town"||p.w==="unreliable")&&matches(p)})
+      .forEach(function(p){h+=rowHTML(p,!!here)});
+    h+='</div>';
+  } else {
+    h+=setHTML();
+  }
+  panel.innerHTML=h;
+  var q=document.getElementById("q");
+  if(q){
+    q.addEventListener("input",function(){ query=this.value; var s=this.selectionStart; render();
+      var n=document.getElementById("q"); if(n){n.focus(); try{n.setSelectionRange(s,s)}catch(e){}} });
+  }
+  var ag=document.getElementById("askgps"); if(ag) ag.onclick=function(){startGPS()};
+  Array.prototype.forEach.call(panel.querySelectorAll(".row"),function(b){
+    b.onclick=function(){ openSheet(byId[b.dataset.id]) };
+  });
+  if(activeTab==="set") wireSetup();
+}
+
+Array.prototype.forEach.call(document.querySelectorAll(".tabs button"),function(b){
+  b.onclick=function(){
+    Array.prototype.forEach.call(document.querySelectorAll(".tabs button"),function(x){
+      x.setAttribute("aria-selected", x===b ? "true":"false");
+    });
+    activeTab=b.dataset.tab;
+    if(activeTab==="near") startGPS();
+    render();
+    panel.scrollTop=0;
+  };
+});
+
+/* ============================================================
+   7. DETAIL SHEET
+   ============================================================ */
+var sheet=document.getElementById("sheet");
+function openSheet(p){
+  if(!p)return;
+  sel=p;
+  document.getElementById("shGlyph").outerHTML=glyphSVG(p).replace('class="glyph"','class="glyph" id="shGlyph" style="width:26px;height:26px"');
+  document.getElementById("shName").textContent=p.n;
+  var meta=p.alt+" m";
+  if(here) meta+=" · "+fmtD(dist(here.lat,here.lon,p.lat,p.lon))+" "+compass(bearing(here.lat,here.lon,p.lat,p.lon));
+  document.getElementById("shMeta").textContent=meta;
+
+  var day=DAYS[p.d];
+  var b="<dl class='kv'>";
+  if(day) b+="<dt>Stage</dt><dd>"+day.n+" · "+day.date+"</dd>";
+  b+="<dt>Type</dt><dd>"+({rifugio:"Staffed rifugio",bivacco:"Unmanned bivacco",
+    guesthouse:"Guesthouse",town:"Town / resupply",pass:"Pass or junction",
+    hazard:"Technical ground",camp:"Camp"}[p.t]||p.t)+"</dd>";
+  if(p.beds) b+="<dt>Beds</dt><dd>"+p.beds+"</dd>";
+  b+="<dt>Water</dt><dd>"+({tap:"Tap at the hut — usually paid",town:"Town supply, shops",
+    spring:"Spring",unreliable:"Unreliable — do not count on it",none:"None"}[p.w]||"Unknown")+"</dd>";
+  if(p.book) b+="<dt>Booking</dt><dd>"+p.book+"</dd>";
+  if(p.ph) b+="<dt>Contact</dt><dd>"+p.ph+"</dd>";
+  b+="<dt>Position</dt><dd style='font-family:var(--font-num);font-size:12.5px'>"+
+    p.lat.toFixed(5)+", "+p.lon.toFixed(5)+"</dd></dl>";
+
+  if(p.flag){
+    var cls = p.t==="hazard"?"haz":(p.w==="none"||p.w==="unreliable")?"":"water";
+    b+='<div class="callout '+cls+'"><b>'+(p.flagT||"Note")+'</b>'+p.flag+'</div>';
+  }
+  var dryHere=DRY.filter(function(s){return s.from===p.id});
+  dryHere.forEach(function(s){
+    b+='<div class="callout"><b>Dry ahead — '+s.n+'</b>'+s.note+'</div>';
+  });
+  if(p.note&&p.note.length){
+    b+="<h3>On the ground</h3><ul>";
+    p.note.forEach(function(x){b+="<li>"+x+"</li>"});
+    b+="</ul>";
+  }
+  document.getElementById("shBody").innerHTML=b;
+
+  var acts='<button id="shCentre">Show on map</button>';
+  acts+='<a href="geo:'+p.lat+','+p.lon+'?q='+p.lat+','+p.lon+'">Open in maps app</a>';
+  if(p.ph&&p.ph.indexOf("+")===0) acts+='<a href="tel:'+p.ph.replace(/\s/g,"")+'">Call</a>';
+  if(p.ph&&p.ph.indexOf("@")>-1) acts+='<a href="mailto:'+p.ph+'">Email</a>';
+  document.getElementById("shActs").innerHTML=acts;
+  document.getElementById("shCentre").onclick=function(){
+    centreOn(p.lat,p.lon,Math.max(view.z,13.5)); closeSheet();
+  };
+  sheet.classList.add("open"); sheet.setAttribute("aria-hidden","false");
+  requestDraw();
+}
+function closeSheet(){ sheet.classList.remove("open"); sheet.setAttribute("aria-hidden","true"); sel=null; requestDraw(); }
+document.getElementById("shClose").onclick=closeSheet;
+document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeSheet(); });
+
+/* ============================================================
+   8. STORAGE (guarded — file:// and private mode may block it)
+   ============================================================ */
+var db=null, dbTried=false;
+function openDB(){
+  return new Promise(function(res){
+    if(db) return res(db);
+    if(dbTried) return res(null);
+    dbTried=true;
+    try{
+      var rq=indexedDB.open("av2map",1);
+      rq.onupgradeneeded=function(){ rq.result.createObjectStore("tiles"); rq.result.createObjectStore("kv"); };
+      rq.onsuccess=function(){ db=rq.result; res(db); };
+      rq.onerror=function(){ res(null); };
+      setTimeout(function(){ if(!db) res(null); },3000);
+    }catch(e){ res(null); }
+  });
+}
+function idbPut(k,v){
+  return openDB().then(function(d){ if(!d)return;
+    try{ d.transaction("tiles","readwrite").objectStore("tiles").put(v,k); }catch(e){} });
+}
+function idbGet(k){
+  return openDB().then(function(d){
+    if(!d) return null;
+    return new Promise(function(res){
+      try{ var r=d.transaction("tiles").objectStore("tiles").get(k);
+        r.onsuccess=function(){res(r.result||null)}; r.onerror=function(){res(null)};
+      }catch(e){res(null)}
+    });
+  });
+}
+function idbCount(){
+  return openDB().then(function(d){
+    if(!d)return 0;
+    return new Promise(function(res){
+      try{ var r=d.transaction("tiles").objectStore("tiles").count();
+        r.onsuccess=function(){res(r.result)}; r.onerror=function(){res(0)};
+      }catch(e){res(0)}
+    });
+  });
+}
+function lsGet(k){ try{return localStorage.getItem(k)}catch(e){return null} }
+function lsSet(k,v){ try{localStorage.setItem(k,v)}catch(e){} }
+
+/* ============================================================
+   9. SETUP TAB
+   ============================================================ */
+function setHTML(){
+  return '<div class="set">'+
+
+  '<section><h3>Ready for the trail?</h3>'+
+  '<p>Check these on wifi at home. Anything red will not fix itself on the mountain.</p>'+
+  '<div id="preflight"><div class="stat">checking…</div></div></section>'+
+
+  '<section><h3>Offline topo tiles</h3>'+
+  '<p>Downloads OpenTopoMap tiles for a corridor along the route and keeps them on the device. '+
+  'Do this on wifi before you fly. It fetches slowly on purpose — the tile server is donated.</p>'+
+  '<div class="tog"><span>Show topo tiles</span><button id="togTiles" aria-pressed="'+(tilesOn?"true":"false")+'">'+(tilesOn?"On":"Off")+'</button></div>'+
+  '<button class="btn go" id="btnCache">Save tiles for offline</button>'+
+  '<button class="btn" id="btnClear">Clear saved tiles</button>'+
+  '<div class="prog" id="prog"><i></i></div>'+
+  '<div class="stat" id="cacheStat">—</div>'+
+  '<div class="warn" id="cacheWarn"></div></section>'+
+
+  '<section><h3>Real route geometry</h3>'+
+  '<p>The red line is a schematic corridor drawn between waypoints, not a surveyed track. '+
+  'Load the official AV2 GPX and it will be replaced with the real thing.</p>'+
+  '<label class="btn" for="gpx" style="display:block">Load a GPX file</label>'+
+  '<input id="gpx" type="file" accept=".gpx,application/gpx+xml,text/xml" style="display:none">'+
+  '<div class="stat" id="gpxStat">'+(ROUTE.__real?"Real track loaded":"Schematic corridor")+'</div></section>'+
+
+  '<section><h3>Send the huts to your map app</h3>'+
+  '<p>Exports every rifugio, bivacco, pass and water point as a GPX waypoint file. '+
+  'Import it into OsmAnd, Gaia, Organic Maps or Locus so you have these points on a proper offline topo map too.</p>'+
+  '<button class="btn go" id="btnExport">Export waypoints as GPX</button></section>'+
+
+  '<section><h3>Weather, before you lose signal</h3>'+
+  '<p>Regional services beat global apps for Dolomites convection. Screenshot the bulletin — '+
+  'the Pale plateau and the Feltrine have next to no coverage.</p>'+
+  '<ul style="margin:0;padding-left:17px;font-size:13px">'+
+  HELP.meteo.map(function(m){return "<li><strong>"+m[0]+"</strong> — "+m[1]+"</li>"}).join("")+
+  '</ul>'+
+  '<div class="callout haz" style="margin-top:10px"><b>August pattern</b>'+
+  'Storms are thermal. They build through the afternoon and fire between roughly 14:00 and 19:00. '+
+  'That is the argument for the 06:00 starts, not just the distance.</div></section>'+
+
+  '<section><h3>Emergency</h3>'+
+  '<p>Single European number, works with any network and with no SIM.</p>'+
+  '<a class="btn go" href="tel:112">Call 112</a>'+
+  '<p style="margin-top:9px">Also worth having: the <strong>GeoResQ</strong> or <strong>Where ARE U</strong> app, '+
+  'which sends your coordinates with the call.</p></section>'+
+
+  '<section><h3>Display</h3>'+
+  '<div class="tog"><span>Daylight colours</span><button id="togDay" aria-pressed="'+(document.body.classList.contains("day")?"true":"false")+'">'+
+  (document.body.classList.contains("day")?"On":"Off")+'</button></div>'+
+  '<div class="tog"><span>Keep screen awake</span><button id="togWake" aria-pressed="'+(wakeOn?"true":"false")+'">'+(wakeOn?"On":"Off")+'</button></div>'+
+  '</section>'+
+
+  '<div class="disclaimer"><strong>Read this once.</strong> Coordinates here are approximate, within a '+
+  'few hundred metres, and the elevations are rounded. Hut capacities, phone numbers and opening dates '+
+  'change between seasons. Nothing in this file has been checked against a survey. '+
+  'It is a planning and logistics layer, not a navigation instrument — carry the Tabacco 05 and 022 sheets '+
+  'and a compass, and treat the paper as the authority when they disagree.</div>'+
+
+  '</div>';
+}
+
+var wakeOn=false, wakeLock=null;
+
+function preflight(){
+  var host=document.getElementById("preflight");
+  if(!host) return;
+  var rows=[];
+  function add(ok,label,detail){
+    rows.push({ok:ok,label:label,detail:detail});
+  }
+  var https = location.protocol==="https:"||location.hostname==="localhost";
+  add(https?1:0,"Served over https",
+    https?location.hostname:"opened as "+location.protocol+" — storage and GPS get unreliable");
+  add(swState.indexOf("installed")===0?1:(https?0:2),"Opens with no signal", swState);
+  add(navigator.geolocation?1:0,"GPS available",
+    here?("fix ±"+Math.round(here.acc)+" m"):"no fix yet — go outside and allow location");
+  add(ROUTE.__real?1:2,"Route geometry", ROUTE.__real?"real GPX track":"schematic corridor");
+
+  openDB().then(function(d){
+    add(d?1:0,"Offline storage", d?"available":"blocked by this browser");
+    return idbCount();
+  }).then(function(n){
+    add(n>200?1:(n>0?2:0),"Topo tiles saved", n?n+" tiles":"none — tap Save tiles below");
+    host.innerHTML = rows.map(function(r){
+      var col=r.ok===1?"var(--ok)":r.ok===2?"var(--sign)":"var(--dry)";
+      var mark=r.ok===1?"✓":r.ok===2?"!":"✕";
+      return '<div class="tog"><span><b style="color:'+col+';font-family:var(--font-num);margin-right:8px">'+
+        mark+'</b>'+r.label+'<br><span style="font-size:11px;color:var(--lime-dim);margin-left:22px">'+
+        r.detail+'</span></span></div>';
+    }).join("")+'<div id="swStat" style="display:none"></div>';
+  });
+}
+
+function wireSetup(){
+  preflight();
+  idbCount().then(function(n){
+    var el=document.getElementById("cacheStat");
+    if(el) el.textContent = n ? n+" tiles saved" : "No tiles saved yet";
+  });
+  var warn=document.getElementById("cacheWarn");
+  openDB().then(function(d){
+    if(!d&&warn) warn.textContent="This browser is blocking offline storage — most likely because the file was opened directly from disk. Tiles will still load while you have signal, but they will not persist. Serving the file over http, or using the waypoint export below with a proper offline map app, both get around it.";
+  });
+
+  var t=document.getElementById("togTiles");
+  if(t) t.onclick=function(){
+    tilesOn=!tilesOn; tileFails=0;
+    lsSet("av2tiles",tilesOn?"1":"0");
+    this.setAttribute("aria-pressed",tilesOn?"true":"false");
+    this.textContent=tilesOn?"On":"Off";
+    document.getElementById("attrib").textContent = tilesOn ? "© OpenTopoMap (CC-BY-SA) · © OpenStreetMap" : "Schematic route — verify on ground";
+    requestDraw();
+  };
+  var dbtn=document.getElementById("togDay");
+  if(dbtn) dbtn.onclick=function(){ toggleDay(); this.setAttribute("aria-pressed",document.body.classList.contains("day")?"true":"false");
+    this.textContent=document.body.classList.contains("day")?"On":"Off"; };
+  var wb=document.getElementById("togWake");
+  if(wb) wb.onclick=function(){
+    wakeOn=!wakeOn; this.setAttribute("aria-pressed",wakeOn?"true":"false"); this.textContent=wakeOn?"On":"Off";
+    if(wakeOn){ try{ navigator.wakeLock.request("screen").then(function(w){wakeLock=w}).catch(function(){}); }catch(e){} }
+    else if(wakeLock){ try{wakeLock.release()}catch(e){} wakeLock=null; }
+  };
+  var c=document.getElementById("btnCache"); if(c) c.onclick=cacheTiles;
+  var cl=document.getElementById("btnClear"); if(cl) cl.onclick=function(){
+    openDB().then(function(d){ if(!d)return;
+      try{ d.transaction("tiles","readwrite").objectStore("tiles").clear(); }catch(e){}
+      tileMem={}; setTimeout(function(){ if(activeTab==="set") wireSetup(); },300);
+    });
+  };
+  var e=document.getElementById("btnExport"); if(e) e.onclick=exportGPX;
+  var g=document.getElementById("gpx"); if(g) g.onchange=loadGPX;
+}
+
+function toggleDay(){
+  document.body.classList.toggle("day");
+  lsSet("av2day",document.body.classList.contains("day")?"1":"0");
+  requestDraw(); drawRail();
+}
+document.getElementById("btnTheme").onclick=toggleDay;
+
+/* ---- tile pre-cache along a corridor ---- */
+var cacheAbort=false;
+function corridorTiles(z,km){
+  var set={}, n=Math.pow(2,z);
+  var dLat=km/111, dLon=km/(111*Math.cos(rad(46.4)));
+  for(var i=0;i<ROUTE.length;i++){
+    var a=ROUTE[i], b=ROUTE[i+1]||a;
+    for(var s=0;s<=1.001;s+=0.12){
+      var la=a[0]+(b[0]-a[0])*s, lo=a[1]+(b[1]-a[1])*s;
+      var x0=Math.floor(mx(lo-dLon)*n), x1=Math.floor(mx(lo+dLon)*n);
+      var y0=Math.floor(my(la+dLat)*n), y1=Math.floor(my(la-dLat)*n);
+      for(var x=x0;x<=x1;x++)for(var y=y0;y<=y1;y++) set[z+"/"+x+"/"+y]=[z,x,y];
+    }
+  }
+  return Object.keys(set).map(function(k){return set[k]});
+}
+function cacheTiles(){
+  var btn=document.getElementById("btnCache");
+  if(btn.dataset.busy==="1"){ cacheAbort=true; return; }
+  var jobs=[];
+  [11,12,13].forEach(function(z){ jobs=jobs.concat(corridorTiles(z,3)); });
+  jobs=jobs.concat(corridorTiles(14,1.6));
+  if(jobs.length>3000) jobs=jobs.slice(0,3000);
+  cacheAbort=false;
+  btn.dataset.busy="1"; btn.textContent="Stop";
+  var prog=document.getElementById("prog"), bar=prog.firstElementChild;
+  prog.style.display="block";
+  var done=0, fails=0, i=0, active=0, MAX=3;
+  function step(){
+    if(cacheAbort||i>=jobs.length){
+      if(active===0) finish();
+      return;
+    }
+    while(active<MAX && i<jobs.length && !cacheAbort){
+      var j=jobs[i++]; active++;
+      (function(z,x,y){
+        var k=z+"/"+x+"/"+y;
+        idbGet(k).then(function(existing){
+          if(existing){ active--; done++; tick(); setTimeout(step,0); return; }
+          var img=new Image(); img.crossOrigin="anonymous";
+          img.onload=function(){
+            try{
+              var c=document.createElement("canvas"); c.width=c.height=256;
+              c.getContext("2d").drawImage(img,0,0);
+              idbPut(k,c.toDataURL("image/png"));
+            }catch(e){}
+            active--; done++; tick(); setTimeout(step,120);
+          };
+          img.onerror=function(){ active--; fails++; done++; tick(); setTimeout(step,200); };
+          img.src=TILE_URL.replace("{z}",z).replace("{x}",x).replace("{y}",y);
+        });
+      })(j[0],j[1],j[2]);
+    }
+  }
+  function tick(){
+    bar.style.width=(100*done/jobs.length)+"%";
+    var st=document.getElementById("cacheStat");
+    if(st) st.textContent=done+" / "+jobs.length+(fails?"  ·  "+fails+" failed":"");
+  }
+  function finish(){
+    btn.dataset.busy="0"; btn.textContent="Save tiles for offline";
+    var st=document.getElementById("cacheStat");
+    if(st) st.textContent = cacheAbort ? "Stopped at "+done+" of "+jobs.length
+      : done+" tiles saved"+(fails?", "+fails+" failed":"");
+    setTimeout(function(){ prog.style.display="none"; },1200);
+    if(!tilesOn){ tilesOn=true; requestDraw(); }
+  }
+  step();
+}
+
+/* ---- GPX in ---- */
+function loadGPX(ev){
+  var f=ev.target.files&&ev.target.files[0];
+  if(!f)return;
+  var fr=new FileReader();
+  fr.onload=function(){
+    try{
+      var doc=new DOMParser().parseFromString(fr.result,"application/xml");
+      var pts=doc.getElementsByTagName("trkpt");
+      if(!pts.length) pts=doc.getElementsByTagName("rtept");
+      if(!pts.length) throw new Error("no track points");
+      var out=[];
+      for(var i=0;i<pts.length;i++){
+        var la=parseFloat(pts[i].getAttribute("lat")), lo=parseFloat(pts[i].getAttribute("lon"));
+        if(isFinite(la)&&isFinite(lo)) out.push([la,lo]);
+      }
+      // thin to keep drawing fast
+      var stepN=Math.max(1,Math.floor(out.length/4000));
+      ROUTE=out.filter(function(_,i){return i%stepN===0});
+      ROUTE.__real=true;
+      document.getElementById("gpxStat").textContent=
+        "Real track loaded — "+out.length+" points, drawn at "+ROUTE.length;
+      document.getElementById("attrib").textContent = tilesOn
+        ? "© OpenTopoMap (CC-BY-SA) · © OpenStreetMap" : "Track from your GPX";
+      fitAll();
+    }catch(e){
+      document.getElementById("gpxStat").textContent="Could not read that file — is it a GPX with a track in it?";
+    }
+  };
+  fr.readAsText(f);
+}
+
+/* ---- GPX out ---- */
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function exportGPX(){
+  var x='<?xml version="1.0" encoding="UTF-8"?>\n'+
+    '<gpx version="1.1" creator="AV2 Field Map" xmlns="http://www.topografix.com/GPX/1/1">\n'+
+    '<metadata><name>Alta Via 2 — huts, water, hazards</name></metadata>\n';
+  PTS.forEach(function(p){
+    var sym={rifugio:"Lodge",guesthouse:"Lodge",bivacco:"Shelter",town:"City",
+      pass:"Summit",hazard:"Danger Area",camp:"Campground"}[p.t]||"Waypoint";
+    if(p.w==="tap"||p.w==="town") sym="Drinking Water";
+    var desc=[];
+    if(p.beds)desc.push("Beds: "+p.beds);
+    desc.push("Water: "+p.w);
+    if(p.book)desc.push(p.book);
+    if(p.flag)desc.push(p.flag);
+    (p.note||[]).forEach(function(n){desc.push(n)});
+    x+='<wpt lat="'+p.lat+'" lon="'+p.lon+'"><ele>'+p.alt+'</ele>'+
+       '<name>'+esc(p.n)+'</name><desc>'+esc(desc.join(" | "))+'</desc>'+
+       '<sym>'+sym+'</sym><type>'+p.t+'</type></wpt>\n';
+  });
+  x+='<trk><name>AV2 corridor</name><trkseg>\n';
+  ROUTE.forEach(function(r){ x+='<trkpt lat="'+r[0]+'" lon="'+r[1]+'"></trkpt>\n'; });
+  x+='</trkseg></trk>\n</gpx>\n';
+  var blob=new Blob([x],{type:"application/gpx+xml"});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="alta-via-2-waypoints.gpx";
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+
+/* ============================================================
+   10. BOOT
+   ============================================================ */
+if(lsGet("av2day")==="1") document.body.classList.add("day");
+if(lsGet("av2tiles")==="1"){ tilesOn=true;
+  document.getElementById("attrib").textContent="© OpenTopoMap (CC-BY-SA) · © OpenStreetMap"; }
+
+window.addEventListener("resize",resize);
+window.addEventListener("orientationchange",function(){setTimeout(resize,220)});
+
+var stays=PTS.filter(function(p){return p.stay}).length;
+document.getElementById("mastsub").textContent =
+  PTS.length+" points · "+stays+" nights · 16–26 Aug 2026";
+
+/* Service worker — only meaningful when served over https. Silently absent on file://. */
+var swState="not registered";
+(function(){
+  if(!("serviceWorker" in navigator)) { swState="unsupported"; return; }
+  if(location.protocol!=="https:" && location.hostname!=="localhost"){ swState="needs https"; return; }
+  try{
+    navigator.serviceWorker.register("./sw.js").then(function(){
+      swState="installed — opens offline";
+      var el=document.getElementById("swStat"); if(el) el.textContent=swState;
+    }).catch(function(err){
+      swState="failed: "+(err&&err.message?err.message:"unknown");
+      var el=document.getElementById("swStat"); if(el) el.textContent=swState;
+    });
+  }catch(e){ swState="failed"; }
+})();
+
+resize(); fitAll(); render(); startGPS();
+</script>
+</body>
+</html>
