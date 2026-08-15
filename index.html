@@ -133,8 +133,22 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   display:grid;place-items:center;font-size:17px;font-family:var(--font-disp);font-weight:700;
 }
 .mapbtns button.live{border-color:var(--glacier);color:var(--glacier)}
+.trackbar{
+  position:absolute;left:10px;bottom:10px;z-index:4;display:flex;gap:7px;align-items:center;
+}
+.trackbar button{
+  display:flex;align-items:center;gap:6px;background:var(--rock);border:1px solid var(--rule);
+  border-radius:20px;padding:7px 12px;font-size:12px;font-weight:600;
+  box-shadow:0 2px 8px var(--shadow);line-height:1;
+}
+.trackbar button.rec{border-color:var(--cai);color:var(--cai-lift)}
+.trackbar .dot{width:9px;height:9px;border-radius:50%;background:var(--lime-dim);flex:0 0 auto}
+.trackbar button.rec .dot{background:var(--cai);animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.trackbar .tally{font-family:var(--font-num);font-size:12px}
+
 .scalebar{
-  position:absolute;left:10px;bottom:12px;z-index:3;font-family:var(--font-num);
+  position:absolute;left:10px;bottom:48px;z-index:3;font-family:var(--font-num);
   font-size:10px;color:var(--lime);text-shadow:0 1px 3px var(--night);pointer-events:none;
 }
 .scalebar i{display:block;height:4px;border:1px solid currentColor;border-top:0;margin-top:2px}
@@ -152,6 +166,41 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 }
 .toast.show{opacity:1}
 .toast.bad{border-left-color:var(--dry)}
+
+.modal{
+  position:fixed;inset:0;z-index:30;background:rgba(8,10,14,.72);
+  display:none;align-items:flex-end;justify-content:center;
+}
+.modal.show{display:flex}
+.modal .card{
+  width:100%;max-width:520px;background:var(--rock);border-top:2px solid var(--cai);
+  border-radius:14px 14px 0 0;padding:14px 16px calc(var(--safe-b) + 16px);
+  box-shadow:0 -6px 24px var(--shadow);
+}
+.modal h3{
+  margin:0 0 3px;font-family:var(--font-disp);font-size:13px;letter-spacing:.13em;
+  text-transform:uppercase;font-weight:800;
+}
+.modal p{margin:0 0 11px;font-size:12px;color:var(--lime-dim)}
+.cats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:11px}
+.cats button{
+  border:1px solid var(--rule);background:var(--rock-2);border-radius:10px;padding:9px 4px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;font-weight:600;
+}
+.cats button .em{font-size:19px;line-height:1}
+.cats button[aria-pressed="true"]{border-color:var(--cai);color:var(--cai-lift);background:var(--rock)}
+.modal input,.modal textarea{
+  width:100%;padding:9px 11px;border-radius:9px;border:1px solid var(--rule);
+  background:var(--rock-2);color:var(--lime);font:inherit;font-size:14px;margin-bottom:8px;
+  resize:none;
+}
+.modal input::placeholder,.modal textarea::placeholder{color:var(--lime-dim)}
+.modal .acts{display:flex;gap:8px;flex-wrap:wrap}
+.modal .acts button{
+  flex:1 1 auto;min-width:110px;padding:11px;border:1px solid var(--rule);border-radius:9px;
+  background:var(--rock-2);font-size:12.5px;font-weight:600;
+}
+.modal .acts button.go{border-color:var(--cai);color:var(--cai-lift)}
 
 .movebar{
   display:none;flex:0 0 auto;align-items:center;gap:10px;
@@ -337,6 +386,11 @@ body.mapfull .mast .sub{display:none}
   <canvas id="map"></canvas>
   <div class="attrib" id="attrib">Official AV2 line · 162.5 km</div>
   <div class="scalebar"><span id="scaleTxt">—</span><i id="scaleBar" style="width:60px"></i></div>
+  <div class="trackbar">
+    <button id="btnRec" title="Record my track"><span class="dot"></span><span id="recTxt">Record</span></button>
+    <button id="btnPoop" title="Drop a marker here">💩 <span class="tally" id="poopN">0</span></button>
+    <button id="btnAddPin" title="Add your own pin">＋ Pin</button>
+  </div>
   <div class="mapbtns">
     <button id="btnFull" title="Expand the map">⤢</button>
     <button id="btnLocate" title="Follow my position">◎</button>
@@ -371,6 +425,21 @@ body.mapfull .mast .sub{display:none}
 </nav>
 
 <main id="panel"></main>
+
+<div class="modal" id="newpin">
+  <div class="card">
+    <h3 id="npTitle">New pin</h3>
+    <p>Pick what it is, then say where.</p>
+    <div class="cats" id="npCats"></div>
+    <input id="npName" type="text" placeholder="Name — optional" maxlength="60">
+    <textarea id="npNote" rows="2" placeholder="Note — optional" maxlength="300"></textarea>
+    <div class="acts">
+      <button class="go" id="npHere">At my position</button>
+      <button id="npPick">Tap on the map</button>
+      <button id="npCancel">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -1522,10 +1591,36 @@ function drawScale(){
 
 var rafPending=false;
 function requestDraw(){ if(rafPending)return; rafPending=true; requestAnimationFrame(function(){rafPending=false;draw()}); }
+function drawTrack(){
+  if(!track.segs.length) return;
+  cx.lineJoin="round"; cx.lineCap="round";
+  cx.strokeStyle=css("--glacier"); cx.lineWidth=3.5; cx.globalAlpha=.9;
+  track.segs.forEach(function(s){
+    if(s.length<2) return;
+    cx.beginPath();
+    for(var i=0;i<s.length;i++){
+      var q=toScreen(s[i][0],s[i][1]);
+      if(i===0) cx.moveTo(q[0],q[1]); else cx.lineTo(q[0],q[1]);
+    }
+    cx.stroke();
+  });
+  cx.globalAlpha=1;
+}
+function drawPoops(){
+  if(!poops.length) return;
+  cx.font="17px -apple-system,Segoe UI Emoji,Noto Color Emoji,sans-serif";
+  cx.textAlign="center"; cx.textBaseline="middle";
+  poops.forEach(function(o){
+    var s=toScreen(o.lat,o.lon);
+    if(s[0]<-20||s[0]>W+20||s[1]<-20||s[1]>H+20) return;
+    cx.fillText("\uD83D\uDCA9",s[0],s[1]);
+  });
+  cx.textAlign="start"; cx.textBaseline="alphabetic";
+}
 function draw(){
   if(!W)return;
   cx.fillStyle=css("--map-bg"); cx.fillRect(0,0,W,H);
-  drawTiles(); drawGrid(); drawRoute(); drawMarkers(); drawMe(); drawScale();
+  drawTiles(); drawGrid(); drawRoute(); drawTrack(); drawMarkers(); drawMyPins(); drawPoops(); drawMe(); drawScale();
 }
 
 /* ---- interaction ---- */
@@ -1580,13 +1675,26 @@ function zoomAt(dz,px,py){
 }
 function tap(e){
   var r=cv.getBoundingClientRect(), px=e.clientX-r.left, py=e.clientY-r.top;
-  if(moveMode){
+  if(mapAction){
     var ll=toLatLon(px,py);
-    var movedId=moveMode;
+    var act=mapAction;
+    endMove();
+    if(act.type==="placeUser"){
+      addMyPin(ll[0],ll[1],act.cat,act.name,act.note);
+      return;
+    }
+    if(act.type==="moveUser"){
+      var o=myPins[act.idx];
+      if(o){ o.lat=+ll[0].toFixed(5); o.lon=+ll[1].toFixed(5); }
+      requestDraw(); saveMyPins();
+      toast((o?o.n:"Pin")+" moved");
+      return;
+    }
+    var movedId=act.id;
     pinFix[movedId]=[+ll[0].toFixed(5), +ll[1].toFixed(5)];
     applyPinFix(); reprojectFracs();
     var moved=byId[movedId];
-    endMove(); requestDraw(); drawRail(); render();
+    requestDraw(); drawRail(); render();
     openSheet(moved);
     savePinFix().then(function(){ return kvGet("pinfix"); }).then(function(back){
       var ok = !!(back && JSON.parse(back)[movedId]);
@@ -1594,6 +1702,23 @@ function tap(e){
     }).catch(function(){
       toast("Moved, but the save failed — it will not survive a restart");
     });
+    return;
+  }
+  var bu=null,bud=1e9;
+  myPins.forEach(function(o,i){
+    var s=toScreen(o.lat,o.lon), d=Math.hypot(s[0]-px,s[1]-py);
+    if(d<bud){bud=d;bu=i}
+  });
+  if(bu!==null&&bud<20){ openMyPin(bu); return; }
+  var bp=null,bpd=1e9;
+  poops.forEach(function(o,i){
+    var s=toScreen(o.lat,o.lon), d=Math.hypot(s[0]-px,s[1]-py);
+    if(d<bpd){bpd=d;bp=i}
+  });
+  if(bp!==null&&bpd<18){
+    var o=poops[bp];
+    toast("💩 #"+(bp+1)+" · "+new Date(o.t*1000).toLocaleString([], {
+      day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}));
     return;
   }
   var best=null,bd=1e9;
@@ -1739,6 +1864,12 @@ function startGPS(){
   watchId=navigator.geolocation.watchPosition(function(pos){
     here={lat:pos.coords.latitude,lon:pos.coords.longitude,
       alt:pos.coords.altitude,acc:pos.coords.accuracy};
+    if(recording){
+      var r=trkAdd(here.lat,here.lon,here.alt,here.acc,
+        (pos.timestamp?pos.timestamp:Date.now())/1000);
+      if(trkDirty && (trkCount()%10===0)) trkSave();
+      if(r==="ok"||r==="newseg"||r==="confirmed"||r==="first") requestDraw();
+    }
     updateGPS();
     if(follow) centreOn(here.lat,here.lon);
     requestDraw(); drawRail();
@@ -1777,9 +1908,252 @@ document.getElementById("btnLocate").onclick=function(){
 };
 
 /* ============================================================
+   5c. TRACK RECORDING
+   The filter matters more than the recording. A phone in a
+   couloir will occasionally report a position kilometres away;
+   one such fix, unchallenged, ruins the whole line.
+   ============================================================ */
+var TRK={
+  maxAcc:65,        // metres — a fix worse than this is not evidence of anything
+  maxSpeed:12,      // m/s — walking is ~1.4, a cable car ~8, a teleport is 200
+  minStep:8,        // metres — below this it is noise, not movement
+  gapSec:240,       // seconds — a longer gap starts a new segment
+  confirmDist:60,   // metres — how close consecutive suspicious fixes must be to each other
+  confirmN:5,       // and how many of them in a row
+  confirmSec:60,    // and over how long, before a jump is believed
+  maxPts:80000
+};
+var track={t0:0,segs:[]}, recording=false, trkPending=null, trkLast=null;
+var trkDirty=false, trkRejected=0, poops=[];
+
+function trkCount(){ var n=0; track.segs.forEach(function(s){n+=s.length}); return n; }
+function trkLength(){
+  var m=0;
+  track.segs.forEach(function(s){
+    for(var i=1;i<s.length;i++) m+=dist(s[i-1][0],s[i-1][1],s[i][0],s[i][1]);
+  });
+  return m;
+}
+function trkSpan(){
+  var lo=null,hi=null;
+  track.segs.forEach(function(s){
+    s.forEach(function(p){
+      if(lo===null||p[3]<lo) lo=p[3];
+      if(hi===null||p[3]>hi) hi=p[3];
+    });
+  });
+  return (lo===null)?0:(hi-lo);
+}
+function curSeg(){
+  if(!track.segs.length) track.segs.push([]);
+  return track.segs[track.segs.length-1];
+}
+/* returns a short reason code, mostly so the tests and the UI can see why */
+function trkAdd(lat,lon,ele,acc,tSec){
+  if(trkCount()>=TRK.maxPts) return "full";
+  if(acc!=null && acc>TRK.maxAcc){ trkRejected++; return "acc"; }
+  if(!track.t0) track.t0=tSec;
+  var pt=[+lat.toFixed(5), +lon.toFixed(5), ele==null?null:Math.round(ele), Math.round(tSec-track.t0)];
+  if(!trkLast){ curSeg().push(pt); trkLast={lat:lat,lon:lon,t:tSec}; trkDirty=true; return "first"; }
+  var dt=Math.max(0.001, tSec-trkLast.t);
+  var d=dist(trkLast.lat,trkLast.lon,lat,lon);
+  if(dt>TRK.gapSec){
+    track.segs.push([pt]); trkLast={lat:lat,lon:lon,t:tSec}; trkPending=null; trkDirty=true;
+    return "newseg";
+  }
+  if(d/dt>TRK.maxSpeed){
+    /* Hold it. A single bad fix is obvious; the dangerous case is a burst of
+       them that agree with each other. So a jump is only believed after a long
+       run of consistent fixes. A genuine relocation (phone in a bag, tunnel,
+       cold start) almost always arrives with a time gap instead, and that is
+       handled above by starting a new segment. */
+    if(trkPending && dist(trkPending.last.lat,trkPending.last.lon,lat,lon)<TRK.confirmDist){
+      trkPending.pts.push(pt);
+      trkPending.last={lat:lat,lon:lon,t:tSec};
+      if(trkPending.pts.length>=TRK.confirmN &&
+         (tSec-trkPending.t0)>=TRK.confirmSec){
+        track.segs.push(trkPending.pts);
+        trkLast={lat:lat,lon:lon,t:tSec}; trkPending=null; trkDirty=true;
+        return "confirmed";
+      }
+    } else {
+      trkPending={pts:[pt], last:{lat:lat,lon:lon,t:tSec}, t0:tSec};
+    }
+    trkRejected++;
+    return "held";
+  }
+  trkPending=null;
+  if(d<TRK.minStep) return "tooclose";
+  // a wild altitude reading should not poison the profile
+  var prev=curSeg()[curSeg().length-1];
+  if(prev && prev[2]!=null && pt[2]!=null && Math.abs(pt[2]-prev[2])>150) pt[2]=prev[2];
+  curSeg().push(pt);
+  trkLast={lat:lat,lon:lon,t:tSec}; trkDirty=true;
+  return "ok";
+}
+function trkSave(){
+  trkDirty=false;
+  return kvPut("track", JSON.stringify(track));
+}
+function trkLoad(){
+  return kvGet("track").then(function(s){
+    if(!s) return;
+    try{
+      var t=JSON.parse(s);
+      if(t&&t.segs){ track=t; }
+    }catch(e){}
+  }).catch(function(){});
+}
+function trkClear(){
+  track={t0:0,segs:[]}; trkLast=null; trkPending=null; trkRejected=0;
+  return kvDel("track").then(function(){ requestDraw(); if(activeTab==="set") render(); });
+}
+function setRecording(on){
+  recording=on;
+  lsSet("av2rec",on?"1":"0");
+  var b=document.getElementById("btnRec");
+  b.classList.toggle("rec",on);
+  document.getElementById("recTxt").textContent=on?"Recording":"Record";
+  if(on){ startGPS(); trkLast=null; trkPending=null; }
+  else { trkSave(); }
+  if(activeTab==="set") render();
+}
+document.getElementById("btnRec").onclick=function(){
+  var on=!recording;
+  setRecording(on);
+  toast(on ? "Recording — the line builds as you walk"
+           : "Stopped · "+(trkLength()/1000).toFixed(2)+" km saved");
+};
+
+/* ---- markers ---- */
+function savePoops(){ return kvPut("poops", JSON.stringify(poops)); }
+function loadPoops(){
+  return kvGet("poops").then(function(s){
+    if(!s) return;
+    try{ poops=JSON.parse(s)||[]; }catch(e){ poops=[]; }
+  }).catch(function(){});
+}
+function setPoopN(){ document.getElementById("poopN").textContent=poops.length; }
+function dropPoop(){
+  var lat,lon,src;
+  if(here){ lat=here.lat; lon=here.lon; src="gps"; }
+  else { var c=toLatLon(W/2,H/2); lat=c[0]; lon=c[1]; src="map"; }
+  poops.push({lat:+lat.toFixed(5), lon:+lon.toFixed(5), t:Math.round(Date.now()/1000), src:src});
+  setPoopN(); requestDraw();
+  savePoops().then(function(){ return kvGet("poops"); }).then(function(back){
+    var ok=false;
+    try{ ok=JSON.parse(back).length===poops.length; }catch(e){}
+    toast(ok ? "💩 "+poops.length+(src==="map"?" — no GPS, dropped at map centre":"")
+             : "Dropped, but the save failed");
+  }).catch(function(){ toast("Dropped, but the save failed"); });
+}
+document.getElementById("btnPoop").onclick=dropPoop;
+
+/* ============================================================
+   5d. YOUR OWN PINS
+   ============================================================ */
+var CATS=[
+  {k:"camp",  em:"\u26FA", n:"Camp",  sym:"Campground"},
+  {k:"food",  em:"\uD83C\uDF74", n:"Food",  sym:"Restaurant"},
+  {k:"view",  em:"\uD83D\uDCF7", n:"View",  sym:"Scenic Area"},
+  {k:"water", em:"\uD83D\uDCA7", n:"Water", sym:"Drinking Water"},
+  {k:"care",  em:"\u26A0\uFE0F", n:"Care",  sym:"Danger Area"},
+  {k:"note",  em:"\uD83D\uDCCC", n:"Note",  sym:"Flag"}
+];
+function catOf(k){
+  for(var i=0;i<CATS.length;i++) if(CATS[i].k===k) return CATS[i];
+  return CATS[CATS.length-1];
+}
+var myPins=[];
+function saveMyPins(){ return kvPut("mypins", JSON.stringify(myPins)); }
+function loadMyPins(){
+  return kvGet("mypins").then(function(s){
+    if(!s) return;
+    try{ myPins=JSON.parse(s)||[]; }catch(e){ myPins=[]; }
+  }).catch(function(){});
+}
+function addMyPin(lat,lon,cat,name,note){
+  var c=catOf(cat);
+  myPins.push({
+    cat:cat, n:(name||"").trim()||c.n, note:(note||"").trim(),
+    lat:+lat.toFixed(5), lon:+lon.toFixed(5), t:Math.round(Date.now()/1000)
+  });
+  requestDraw();
+  saveMyPins().then(function(){ return kvGet("mypins"); }).then(function(back){
+    var ok=false;
+    try{ ok=JSON.parse(back).length===myPins.length; }catch(e){}
+    toast(ok ? c.em+" "+myPins[myPins.length-1].n+" saved"
+             : "Added, but the save failed");
+    if(activeTab==="set") render();
+  }).catch(function(){ toast("Added, but the save failed"); });
+}
+function drawMyPins(){
+  if(!myPins.length) return;
+  cx.font="17px -apple-system,\"Segoe UI Emoji\",\"Noto Color Emoji\",sans-serif";
+  cx.textAlign="center"; cx.textBaseline="middle";
+  var showLabels=view.z>=12.5;
+  myPins.forEach(function(o){
+    var s=toScreen(o.lat,o.lon);
+    if(s[0]<-24||s[0]>W+24||s[1]<-24||s[1]>H+24) return;
+    cx.fillText(catOf(o.cat).em,s[0],s[1]);
+    if(showLabels&&o.n){
+      cx.font="600 10.5px "+css("--font-ui");
+      cx.textAlign="center";
+      var w=cx.measureText(o.n).width;
+      cx.fillStyle=css("--night"); cx.globalAlpha=.72;
+      cx.fillRect(s[0]-w/2-3,s[1]+9,w+6,13); cx.globalAlpha=1;
+      cx.fillStyle=css("--lime"); cx.fillText(o.n,s[0],s[1]+15.5);
+      cx.font="17px -apple-system,\"Segoe UI Emoji\",\"Noto Color Emoji\",sans-serif";
+    }
+  });
+  cx.textAlign="start"; cx.textBaseline="alphabetic";
+}
+
+/* ---- the add-a-pin sheet ---- */
+var npCat="camp";
+(function(){
+  var host=document.getElementById("npCats");
+  host.innerHTML=CATS.map(function(c){
+    return '<button data-cat="'+c.k+'" aria-pressed="'+(c.k===npCat?"true":"false")+'">'+
+      '<span class="em">'+c.em+'</span>'+c.n+'</button>';
+  }).join("");
+  host.addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    npCat=b.dataset.cat;
+    Array.prototype.forEach.call(host.children,function(x){
+      x.setAttribute("aria-pressed", x===b ? "true":"false");
+    });
+  });
+})();
+function openNewPin(){
+  document.getElementById("npName").value="";
+  document.getElementById("npNote").value="";
+  document.getElementById("newpin").classList.add("show");
+}
+function closeNewPin(){ document.getElementById("newpin").classList.remove("show"); }
+document.getElementById("btnAddPin").onclick=openNewPin;
+document.getElementById("npCancel").onclick=closeNewPin;
+document.getElementById("npHere").onclick=function(){
+  var name=document.getElementById("npName").value, note=document.getElementById("npNote").value;
+  if(here){ addMyPin(here.lat,here.lon,npCat,name,note); closeNewPin(); }
+  else {
+    startGPS();
+    toast("No GPS fix yet — use Tap on the map instead");
+  }
+};
+document.getElementById("npPick").onclick=function(){
+  var name=document.getElementById("npName").value, note=document.getElementById("npNote").value;
+  closeNewPin();
+  mapAction={type:"placeUser",cat:npCat,name:name,note:note};
+  var b=document.getElementById("movebar");
+  b.style.display="flex";
+  b.querySelector("span").textContent="Tap where the "+catOf(npCat).n.toLowerCase()+" goes";
+};
+
+/* ============================================================
    5b. CORRECTING A PIN AGAINST THE BASEMAP
    ============================================================ */
-var moveMode=null, pinFix={};
+var mapAction=null, pinFix={};
 
 function applyPinFix(){
   PTS.forEach(function(p){
@@ -1811,7 +2185,7 @@ function toast(msg,bad){
   toastT=setTimeout(function(){ el.classList.remove("show"); },3200);
 }
 function startMove(p){
-  moveMode=p.id;
+  mapAction={type:"movePT",id:p.id};
   closeSheet();
   var b=document.getElementById("movebar");
   b.style.display="flex";
@@ -1819,7 +2193,7 @@ function startMove(p){
   centreOn(p.lat,p.lon,Math.max(view.z,14.5));
 }
 function endMove(){
-  moveMode=null;
+  mapAction=null;
   var b=document.getElementById("movebar");
   if(b) b.style.display="none";
 }
@@ -1947,6 +2321,58 @@ Array.prototype.forEach.call(document.querySelectorAll(".tabs button"),function(
    7. DETAIL SHEET
    ============================================================ */
 var sheet=document.getElementById("sheet");
+function openMyPin(i){
+  var o=myPins[i]; if(!o) return;
+  var c=catOf(o.cat);
+  sel=null;
+  document.getElementById("shGlyph").outerHTML=
+    '<svg class="glyph" id="shGlyph" viewBox="0 0 22 22" style="width:26px;height:26px"></svg>';
+  document.getElementById("shName").textContent=c.em+"  "+o.n;
+  var meta=c.n;
+  if(here) meta+=" · "+fmtD(dist(here.lat,here.lon,o.lat,o.lon))+" "+compass(bearing(here.lat,here.lon,o.lat,o.lon));
+  document.getElementById("shMeta").textContent=meta;
+
+  var b="<dl class='kv'>";
+  b+="<dt>Added</dt><dd>"+new Date(o.t*1000).toLocaleString([],
+      {day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})+"</dd>";
+  b+="<dt>Position</dt><dd style='font-family:var(--font-num);font-size:12.5px'>"+
+     o.lat.toFixed(5)+", "+o.lon.toFixed(5)+
+     "<br><span style='font-family:var(--font-ui);font-size:11px;color:var(--ok)'>Your own pin</span></dd>";
+  b+="</dl>";
+  if(o.note) b+='<div class="callout water"><b>Note</b>'+esc(o.note).replace(/\n/g,"<br>")+'</div>';
+  b+='<h3>Rename</h3><input id="mpName" type="text" value="'+esc(o.n).replace(/"/g,"&quot;")+
+     '" maxlength="60" style="width:100%;padding:9px 11px;border-radius:9px;border:1px solid var(--rule);background:var(--rock-2);color:var(--lime);font:inherit;font-size:14px">';
+  document.getElementById("shBody").innerHTML=b;
+
+  document.getElementById("shActs").innerHTML=
+    '<button id="mpSave">Save name</button>'+
+    '<button id="mpMove">Move pin</button>'+
+    '<a href="geo:'+o.lat+','+o.lon+'?q='+o.lat+','+o.lon+'">Open in maps app</a>'+
+    '<button id="mpDel" style="border-color:var(--dry);color:var(--dry)">Delete</button>';
+  document.getElementById("mpSave").onclick=function(){
+    var v=document.getElementById("mpName").value.trim();
+    if(v){ o.n=v; saveMyPins(); requestDraw(); toast("Renamed"); }
+  };
+  document.getElementById("mpMove").onclick=function(){
+    closeSheet();
+    mapAction={type:"moveUser",idx:i};
+    var bar=document.getElementById("movebar");
+    bar.style.display="flex";
+    bar.querySelector("span").textContent="Tap where "+o.n+" really is";
+    centreOn(o.lat,o.lon,Math.max(view.z,14.5));
+  };
+  var del=document.getElementById("mpDel");
+  del.onclick=function(){
+    if(del.dataset.sure==="1"){
+      myPins.splice(i,1); saveMyPins(); closeSheet(); requestDraw();
+      if(activeTab==="set") render();
+      toast("Deleted");
+    } else { del.dataset.sure="1"; del.textContent="Tap again to delete"; }
+  };
+  sheet.classList.add("open"); sheet.setAttribute("aria-hidden","false");
+  requestDraw();
+}
+
 function openSheet(p){
   if(!p)return;
   sel=p;
@@ -2125,9 +2551,41 @@ function setHTML(){
   '<div class="stat" id="cacheStat">—</div>'+
   '<div class="warn" id="cacheWarn"></div></section>'+
 
+  '<section><h3>Your pins</h3>'+
+  '<p>Camps, lunch spots, viewpoints, anything worth remembering. Tap <strong>\uFF0BPin</strong> on the map, '+
+  'drop it at your position or by tapping the map, then tap it later to rename, move or delete.</p>'+
+  '<div class="stat">'+(myPins.length
+    ? myPins.length+' pin'+(myPins.length===1?'':'s')+' \u00b7 '+
+      CATS.map(function(c){
+        var n=myPins.filter(function(o){return o.cat===c.k}).length;
+        return n?(c.em+' '+n):'';
+      }).filter(Boolean).join('  ')
+    : 'None yet')+'</div>'+
+  (myPins.length?'<button class="btn" id="btnPinsClear">Delete all your pins</button>':'')+
+  '</section>'+
+
+  '<section><h3>Your track</h3>'+
+  '<p>Records where you actually walked, filtered so a stray GPS fix cannot drag the line '+
+  'across a valley. Export the GPX when you are home and drop it straight into Google Earth.</p>'+
+  '<div class="tog"><span>Recording</span><button id="togRec" aria-pressed="'+(recording?"true":"false")+'">'+
+  (recording?"On":"Off")+'</button></div>'+
+  '<div class="stat" id="trkStat">'+
+    (trkCount()
+      ? (trkLength()/1000).toFixed(2)+" km \u00b7 "+trkCount()+" points \u00b7 "+
+        track.segs.filter(function(s){return s.length}).length+" segment"+
+        (track.segs.filter(function(s){return s.length}).length===1?"":"s")+
+        (trkRejected?" \u00b7 "+trkRejected+" bad fixes filtered out":"")
+      : "Nothing recorded yet")+
+  '</div>'+
+  '<div class="stat">'+poops.length+' \uD83D\uDCA9 marker'+(poops.length===1?'':'s')+'</div>'+
+  '<button class="btn go" id="btnTrkGpx">Export track + pins as GPX</button>'+
+  (poops.length?'<button class="btn" id="btnPoopUndo">Remove the last \uD83D\uDCA9</button>':'')+
+  (trkCount()?'<button class="btn" id="btnTrkClear">Erase the recorded track</button>':'')+
+  '</section>'+
+
   '<section><h3>3D terrain</h3>'+
-  '<p>A separate viewer that drapes the topo map over real elevation data. Good for reading a col '+
-  'the night before. Your corrected pins carry over automatically.</p>'+
+  '<p>Drapes this map over real elevation for the whole route. Scrub along the line, or follow your '+
+  'own position. Corrected pins and saved topo tiles are shared with this map.</p>'+
   '<a class="btn go" href="./3d.html">Open 3D terrain</a></section>'+
 
   '<section><h3>Marker positions</h3>'+
@@ -2210,6 +2668,9 @@ function preflight(){
   add(swState.indexOf("installed")===0?1:(https?0:2),"Opens with no signal", swState);
   add(navigator.geolocation?1:0,"GPS available",
     here?("fix ±"+Math.round(here.acc)+" m"):"no fix yet — go outside and allow location");
+  add(recording?1:2,"Track recording", recording
+    ? "on \u00b7 "+(trkLength()/1000).toFixed(2)+" km so far"
+    : (trkCount()?"paused \u00b7 "+(trkLength()/1000).toFixed(2)+" km saved":"off"));
   var nApprox=PTS.filter(function(x){return x.q==="approx"}).length;
   add(nApprox?2:1,"Marker positions", nApprox
     ? nApprox+" still approximate — check them against the topo"
@@ -2273,6 +2734,24 @@ function wireSetup(){
   var g=document.getElementById("gpx"); if(g) g.onchange=loadGPX;
   var fg=document.getElementById("btnForget"); if(fg) fg.onclick=forgetTrack;
   var rp=document.getElementById("btnResetPins"); if(rp) rp.onclick=resetPins;
+  var tr=document.getElementById("togRec");
+  if(tr) tr.onclick=function(){ setRecording(!recording); };
+  var tg=document.getElementById("btnTrkGpx"); if(tg) tg.onclick=exportTrackGPX;
+  var pu=document.getElementById("btnPoopUndo");
+  if(pu) pu.onclick=function(){
+    poops.pop(); setPoopN(); savePoops(); requestDraw(); render();
+  };
+  var pc=document.getElementById("btnPinsClear");
+  if(pc) pc.onclick=function(){
+    if(pc.dataset.sure==="1"){
+      myPins=[]; saveMyPins(); requestDraw(); render(); toast("All your pins deleted");
+    } else { pc.dataset.sure="1"; pc.textContent="Tap again to delete them all"; }
+  };
+  var tc=document.getElementById("btnTrkClear");
+  if(tc) tc.onclick=function(){
+    if(tc.dataset.sure==="1"){ trkClear(); toast("Track erased"); }
+    else { tc.dataset.sure="1"; tc.textContent="Tap again to erase for good"; }
+  };
 }
 
 var THEMES=[
@@ -2555,6 +3034,13 @@ function exportGPX(){
        '<name>'+esc(p.n)+'</name><desc>'+esc(desc.join(" | "))+'</desc>'+
        '<sym>'+sym+'</sym><type>'+p.t+'</type></wpt>\n';
   });
+  myPins.forEach(function(o){
+    var c=catOf(o.cat);
+    x+='<wpt lat="'+o.lat+'" lon="'+o.lon+'">'+
+       '<name>'+esc(c.em+" "+o.n)+'</name>'+
+       (o.note?'<desc>'+esc(o.note)+'</desc>':'')+
+       '<sym>'+c.sym+'</sym><type>'+o.cat+'</type></wpt>\n';
+  });
   x+='<trk><name>AV2 corridor</name><trkseg>\n';
   ROUTE.forEach(function(r){ x+='<trkpt lat="'+r[0]+'" lon="'+r[1]+'"></trkpt>\n'; });
   x+='</trkseg></trk>\n</gpx>\n';
@@ -2563,6 +3049,51 @@ function exportGPX(){
   a.href=URL.createObjectURL(blob); a.download="alta-via-2-waypoints.gpx";
   document.body.appendChild(a); a.click();
   setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+
+/* ---- Recorded track out, for Google Earth ---- */
+function isoOf(sec){ return new Date(sec*1000).toISOString().replace(/\.\d{3}Z$/,"Z"); }
+function exportTrackGPX(){
+  if(!trkCount() && !poops.length && !myPins.length){ toast("Nothing recorded yet"); return; }
+  var x='<?xml version="1.0" encoding="UTF-8"?>\n'+
+    '<gpx version="1.1" creator="AV2 Field Map" xmlns="http://www.topografix.com/GPX/1/1">\n'+
+    '<metadata><name>Alta Via 2 — recorded track</name>'+
+    (track.t0?'<time>'+isoOf(track.t0)+'</time>':'')+'</metadata>\n';
+  myPins.forEach(function(o){
+    var c=catOf(o.cat);
+    x+='<wpt lat="'+o.lat+'" lon="'+o.lon+'">'+
+       '<name>'+esc(c.em+" "+o.n)+'</name>'+
+       (o.note?'<desc>'+esc(o.note)+'</desc>':'')+
+       '<time>'+isoOf(o.t)+'</time>'+
+       '<sym>'+c.sym+'</sym><type>'+o.cat+'</type></wpt>\n';
+  });
+  poops.forEach(function(o,i){
+    x+='<wpt lat="'+o.lat+'" lon="'+o.lon+'">'+
+       '<name>'+esc("💩 "+(i+1))+'</name>'+
+       '<time>'+isoOf(o.t)+'</time>'+
+       '<sym>Restroom</sym><type>tally</type></wpt>\n';
+  });
+  if(trkCount()){
+    x+='<trk><name>AV2 recorded</name><type>hiking</type>\n';
+    track.segs.forEach(function(s){
+      if(!s.length) return;
+      x+='<trkseg>\n';
+      s.forEach(function(p){
+        x+='<trkpt lat="'+p[0]+'" lon="'+p[1]+'">'+
+           (p[2]!=null?'<ele>'+p[2]+'</ele>':'')+
+           '<time>'+isoOf(track.t0+p[3])+'</time></trkpt>\n';
+      });
+      x+='</trkseg>\n';
+    });
+    x+='</trk>\n';
+  }
+  x+='</gpx>\n';
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([x],{type:"application/gpx+xml"}));
+  a.download="av2-recorded-"+new Date().toISOString().slice(0,10)+".gpx";
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+  toast("GPX exported — "+trkCount()+" track points, "+myPins.length+" pins, "+poops.length+" \uD83D\uDCA9");
 }
 
 /* ============================================================
@@ -2578,6 +3109,11 @@ if(lsGet("av2full")==="1"){
 }
 if(lsGet("av2tiles")==="1") tilesOn=true;
 setAttrib();
+
+function flush(){ if(trkDirty) trkSave(); }
+window.addEventListener("pagehide",flush);
+document.addEventListener("visibilitychange",function(){ if(document.hidden) flush(); });
+setInterval(function(){ if(recording&&trkDirty) trkSave(); },30000);
 
 window.addEventListener("resize",resize);
 window.addEventListener("orientationchange",function(){setTimeout(resize,220)});
@@ -2603,7 +3139,9 @@ var swState="not registered";
 })();
 
 resize();
-Promise.all([restoreTrack(), loadPinFix()]).then(function(){
+Promise.all([restoreTrack(), loadPinFix(), trkLoad(), loadPoops(), loadMyPins()]).then(function(){
+  setPoopN();
+  if(lsGet("av2rec")==="1"){ setRecording(true); }
   reprojectFracs();
   fitAll(); drawRail(); render();
 }).catch(function(){ fitAll(); });
