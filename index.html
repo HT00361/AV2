@@ -143,6 +143,16 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   background:var(--rock);padding:2px 6px;border-radius:4px;opacity:.85;pointer-events:none;
 }
 
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + 74px);
+  z-index:40;background:var(--rock);color:var(--lime);border:1px solid var(--rule);
+  border-left:3px solid var(--ok);border-radius:9px;padding:9px 14px;font-size:13px;
+  box-shadow:0 4px 18px var(--shadow);max-width:88vw;opacity:0;transition:opacity .18s;
+  pointer-events:none;
+}
+.toast.show{opacity:1}
+.toast.bad{border-left-color:var(--dry)}
+
 .movebar{
   display:none;flex:0 0 auto;align-items:center;gap:10px;
   background:var(--sign);color:#12161d;padding:8px 12px;font-size:13px;font-weight:600;
@@ -361,6 +371,8 @@ body.mapfull .mast .sub{display:none}
 </nav>
 
 <main id="panel"></main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div id="sheet" role="dialog" aria-modal="false" aria-hidden="true">
   <div class="sh-grab"></div>
@@ -1570,11 +1582,18 @@ function tap(e){
   var r=cv.getBoundingClientRect(), px=e.clientX-r.left, py=e.clientY-r.top;
   if(moveMode){
     var ll=toLatLon(px,py);
-    pinFix[moveMode]=[+ll[0].toFixed(5), +ll[1].toFixed(5)];
-    applyPinFix(); reprojectFracs(); savePinFix();
-    var moved=byId[moveMode];
+    var movedId=moveMode;
+    pinFix[movedId]=[+ll[0].toFixed(5), +ll[1].toFixed(5)];
+    applyPinFix(); reprojectFracs();
+    var moved=byId[movedId];
     endMove(); requestDraw(); drawRail(); render();
     openSheet(moved);
+    savePinFix().then(function(){ return kvGet("pinfix"); }).then(function(back){
+      var ok = !!(back && JSON.parse(back)[movedId]);
+      toast(ok ? shortName(moved)+" moved and saved" : "Moved, but the save failed — it will not survive a restart");
+    }).catch(function(){
+      toast("Moved, but the save failed — it will not survive a restart");
+    });
     return;
   }
   var best=null,bd=1e9;
@@ -1781,6 +1800,16 @@ function resetPins(){
   pinFix={};
   return kvDel("pinfix").then(function(){ location.reload(); });
 }
+var toastT=null;
+function toast(msg,bad){
+  var el=document.getElementById("toast");
+  if(!el) return;
+  el.textContent=msg;
+  el.classList.toggle("bad", !!bad || /fail/i.test(msg));
+  el.classList.add("show");
+  clearTimeout(toastT);
+  toastT=setTimeout(function(){ el.classList.remove("show"); },3200);
+}
 function startMove(p){
   moveMode=p.id;
   closeSheet();
@@ -1984,20 +2013,30 @@ document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeSheet
 /* ============================================================
    8. STORAGE (guarded — file:// and private mode may block it)
    ============================================================ */
-var db=null, dbTried=false;
+var db=null, dbPromise=null;
 function openDB(){
-  return new Promise(function(res){
-    if(db) return res(db);
-    if(dbTried) return res(null);
-    dbTried=true;
+  /* Memoise the PROMISE, not the result. Several callers open storage at launch
+     (track, pin corrections, tile cache, preflight); returning early to any of
+     them lost their writes. */
+  if(dbPromise) return dbPromise;
+  dbPromise=new Promise(function(res){
     try{
-      var rq=indexedDB.open("av2map",1);
-      rq.onupgradeneeded=function(){ rq.result.createObjectStore("tiles"); rq.result.createObjectStore("kv"); };
+      if(typeof indexedDB==="undefined") return res(null);
+      var rq=indexedDB.open("av2map",2);
+      rq.onupgradeneeded=function(){
+        var d=rq.result;
+        if(!d.objectStoreNames.contains("tiles")) d.createObjectStore("tiles");
+        if(!d.objectStoreNames.contains("kv")) d.createObjectStore("kv");
+      };
       rq.onsuccess=function(){ db=rq.result; res(db); };
       rq.onerror=function(){ res(null); };
-      setTimeout(function(){ if(!db) res(null); },3000);
+      rq.onblocked=function(){ res(null); };
+      setTimeout(function(){
+        if(!db){ res(null); dbPromise=null; }   // allow a later retry
+      },4000);
     }catch(e){ res(null); }
   });
+  return dbPromise;
 }
 function idbPut(k,v){
   return openDB().then(function(d){ if(!d)return;
@@ -2027,13 +2066,23 @@ function lsGet(k){ try{return localStorage.getItem(k)}catch(e){return null} }
 function lsSet(k,v){ try{localStorage.setItem(k,v)}catch(e){} }
 function lsDel(k){ try{localStorage.removeItem(k)}catch(e){} }
 
-/* Small persistent values (the loaded track). IndexedDB first, localStorage if it is blocked. */
+/* Small persistent values (loaded track, pin corrections).
+   Written to BOTH stores and read from either — losing these is worse than the
+   few bytes it costs, and localStorage alone survives most IndexedDB failures. */
 function kvPut(k,v){
+  lsSet("av2kv_"+k,v);
   return openDB().then(function(d){
-    if(!d){ lsSet("av2kv_"+k,v); return; }
-    try{ d.transaction("kv","readwrite").objectStore("kv").put(v,k); }
-    catch(e){ lsSet("av2kv_"+k,v); }
-  }).catch(function(){ lsSet("av2kv_"+k,v); });
+    if(!d) return false;
+    return new Promise(function(res){
+      try{
+        var tx=d.transaction("kv","readwrite");
+        tx.objectStore("kv").put(v,k);
+        tx.oncomplete=function(){ res(true); };
+        tx.onerror=function(){ res(false); };
+        tx.onabort=function(){ res(false); };
+      }catch(e){ res(false); }
+    });
+  }).catch(function(){ return false; });
 }
 function kvGet(k){
   return openDB().then(function(d){
