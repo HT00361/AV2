@@ -123,10 +123,37 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .gps span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
 .gps .hot{color:var(--sign)}
 
+/* ---------- today strip ---------- */
+.todaybar{
+  flex:0 0 auto;display:none;align-items:center;gap:9px;
+  background:var(--rock-2);border-bottom:1px solid var(--rule);padding:7px 12px 8px;
+  position:relative;
+}
+.todaybar .tdmain{flex:1;min-width:0}
+.todaybar .tdtxt{font-size:12px;line-height:1.3;display:block}
+.todaybar .tdtxt b{font-family:var(--font-disp);font-weight:800;text-transform:uppercase;
+  letter-spacing:.06em;font-size:11px;margin-right:3px}
+.todaybar .left{color:var(--sign);font-family:var(--font-num)}
+.todaybar .done{color:var(--ok)}
+.todaybar .off{color:var(--dry)}
+.todaybar .tdbar{height:4px;background:var(--rule);border-radius:2px;margin-top:5px;overflow:hidden}
+.todaybar .tdfill{display:block;height:100%;background:var(--glacier);width:0;transition:width .3s}
+.todaybar button{
+  flex:0 0 auto;border:1px solid var(--rule);background:var(--rock);border-radius:18px;
+  padding:7px 11px;font-size:11.5px;font-weight:600;white-space:nowrap;
+}
+.todaybar button.on{border-color:var(--ok);color:var(--ok)}
+
 /* ---------- map ---------- */
 #mapwrap{position:relative;flex:1 1 auto;min-height:180px;background:var(--map-bg);overflow:hidden}
 #map{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
 .mapbtns{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:7px;z-index:4}
+.mapbtns a{
+  width:42px;height:42px;border-radius:10px;background:var(--rock);
+  border:1px solid var(--rule);box-shadow:0 2px 8px var(--shadow);
+  display:grid;place-items:center;font-size:12.5px;font-family:var(--font-disp);
+  font-weight:800;letter-spacing:.04em;color:var(--lime);
+}
 .mapbtns button{
   width:42px;height:42px;border-radius:10px;background:var(--rock);
   border:1px solid var(--rule);box-shadow:0 2px 8px var(--shadow);
@@ -378,8 +405,13 @@ body.mapfull .mast .sub{display:none}
 <div class="gps" id="gpsbar">
   <div><b>Position</b><span id="gPos">GPS off</span></div>
   <div><b>Altitude</b><span id="gAlt">—</span></div>
-  <div><b>Next shelter</b><span id="gShelter">—</span></div>
-  <div><b>Next water</b><span id="gWater" class="hot">—</span></div>
+  <div><b>Shelter ahead</b><span id="gShelter">—</span></div>
+  <div><b>Water ahead</b><span id="gWater" class="hot">—</span></div>
+</div>
+
+<div class="todaybar" id="todaybar">
+  <span class="tdmain"><span class="tdtxt"></span><span class="tdbar"><i class="tdfill"></i></span></span>
+  <button id="btnCamp">⛺ Camped</button>
 </div>
 
 <div id="mapwrap">
@@ -392,6 +424,8 @@ body.mapfull .mast .sub{display:none}
     <button id="btnAddPin" title="Add your own pin">＋ Pin</button>
   </div>
   <div class="mapbtns">
+    <a href="./profile.html" id="btnProf" title="Elevation profile" style="text-decoration:none">⛰</a>
+    <a href="./3d.html" id="btn3D" title="3D terrain" style="text-decoration:none">3D</a>
     <button id="btnFull" title="Expand the map">⤢</button>
     <button id="btnLocate" title="Follow my position">◎</button>
     <button id="btnFit" title="Fit whole route">⊡</button>
@@ -1380,6 +1414,62 @@ function unmy(y){
   return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
 }
 
+/* ============================================================
+   2b. ALONG-ROUTE DISTANCE
+   Straight-line distance is misleading in the Dolomites — a hut
+   2 km away across a gorge can be 7 km of walking. Everything
+   the walker actually needs is measured along the line.
+   ============================================================ */
+var ROUTE_KM=[], ROUTE_TOTAL=0, lastRouteIdx=-1;
+function buildRouteKm(){
+  ROUTE_KM=[0]; ROUTE_TOTAL=0;
+  for(var i=1;i<ROUTE.length;i++){
+    ROUTE_TOTAL+=dist(ROUTE[i-1][0],ROUTE[i-1][1],ROUTE[i][0],ROUTE[i][1]);
+    ROUTE_KM.push(ROUTE_TOTAL);
+  }
+  lastRouteIdx=-1;
+}
+/* nearest point on the route, in metres along it. Searches a window around the
+   last result first, so this is cheap enough to run on every GPS fix. */
+function alongRoute(lat,lon){
+  if(!ROUTE_KM.length) return null;
+  function scan(a,b){
+    var bi=-1,bd=1e12;
+    for(var i=Math.max(0,a);i<Math.min(ROUTE.length,b);i++){
+      var d=dist(lat,lon,ROUTE[i][0],ROUTE[i][1]);
+      if(d<bd){bd=d;bi=i}
+    }
+    return {i:bi,d:bd};
+  }
+  var r;
+  if(lastRouteIdx>=0){
+    r=scan(lastRouteIdx-250,lastRouteIdx+250);
+    if(r.d>2000) r=scan(0,ROUTE.length);        // lost the thread — full search
+  } else {
+    r=scan(0,ROUTE.length);
+  }
+  if(r.i<0) return null;
+  lastRouteIdx=r.i;
+  return {km:ROUTE_KM[r.i], off:r.d, i:r.i};
+}
+/* how far along the route a lat/lon sits, without disturbing the cached index */
+function alongRouteStatic(lat,lon){
+  if(!ROUTE_KM.length) return null;
+  var bi=-1,bd=1e12;
+  for(var i=0;i<ROUTE.length;i++){
+    var d=dist(lat,lon,ROUTE[i][0],ROUTE[i][1]);
+    if(d<bd){bd=d;bi=i}
+  }
+  return bi<0?null:{km:ROUTE_KM[bi],off:bd};
+}
+/* walking distance from here to a waypoint, measured along the line */
+function routeDistTo(p){
+  if(!here) return null;
+  var me=alongRoute(here.lat,here.lon);
+  if(!me||p.km==null) return null;
+  return p.km-me.km;      // negative means it is behind you
+}
+
 var byId={};
 PTS.forEach(function(p){byId[p.id]=p});
 
@@ -1620,7 +1710,7 @@ function drawPoops(){
 function draw(){
   if(!W)return;
   cx.fillStyle=css("--map-bg"); cx.fillRect(0,0,W,H);
-  drawTiles(); drawGrid(); drawRoute(); drawTrack(); drawMarkers(); drawMyPins(); drawPoops(); drawMe(); drawScale();
+  drawTiles(); drawGrid(); drawRoute(); drawTrack(); drawMarkers(); drawMyPins(); drawCamps(); drawPoops(); drawMe(); drawScale();
 }
 
 /* ---- interaction ---- */
@@ -1865,9 +1955,17 @@ function startGPS(){
     here={lat:pos.coords.latitude,lon:pos.coords.longitude,
       alt:pos.coords.altitude,acc:pos.coords.accuracy};
     if(recording){
-      var r=trkAdd(here.lat,here.lon,here.alt,here.acc,
-        (pos.timestamp?pos.timestamp:Date.now())/1000);
-      if(trkDirty && (trkCount()%10===0)) trkSave();
+      var tsec=(pos.timestamp?pos.timestamp:Date.now())/1000;
+      if(trkLast && tsec-trkLast.t>TRK.gapSec){
+        var mins=Math.round((tsec-trkLast.t)/60);
+        trkGaps.push({at:Math.round(trkLast.t),mins:mins});
+        toast("GPS was suspended for "+(mins<60?mins+" min":(mins/60).toFixed(1)+" h")+
+          " — the line resumes from here");
+      }
+      var r=trkAdd(here.lat,here.lon,here.alt,here.acc,tsec);
+      /* Save on every accepted point. A kill mid-day should cost seconds, not
+         the last nine fixes; the write is a few hundred bytes. */
+      if(trkDirty) trkSave();
       if(r==="ok"||r==="newseg"||r==="confirmed"||r==="first") requestDraw();
     }
     updateGPS();
@@ -1883,12 +1981,37 @@ function updateGPS(){
   document.getElementById("gPos").textContent=
     here.lat.toFixed(4)+", "+here.lon.toFixed(4)+(here.acc?" ±"+Math.round(here.acc)+"m":"");
   document.getElementById("gAlt").textContent= here.alt!=null?Math.round(here.alt)+" m":"—";
-  var shel=nearest(function(p){return p.t==="rifugio"||p.t==="bivacco"||p.t==="guesthouse"||p.t==="town"});
-  var wat =nearest(function(p){return p.w==="tap"||p.w==="town"});
-  document.getElementById("gShelter").textContent= shel?shortName(shel.p)+" "+fmtD(shel.d):"—";
-  document.getElementById("gWater").textContent= wat?shortName(wat.p)+" "+fmtD(wat.d):"—";
+  /* Measured along the route, and only counting what is still ahead — a hut
+     you passed an hour ago is not the next shelter. */
+  var shel=aheadOnRoute(function(p){return p.t==="rifugio"||p.t==="bivacco"||p.t==="guesthouse"||p.t==="town"});
+  var wat =aheadOnRoute(function(p){return p.w==="tap"||p.w==="town"});
+  document.getElementById("gShelter").textContent=
+    shel ? (shel.at ? "at "+shortName(shel.p) : shortName(shel.p)+" "+fmtD(shel.d)) : "—";
+  document.getElementById("gWater").textContent=
+    wat ? (wat.at ? "at "+shortName(wat.p) : shortName(wat.p)+" "+fmtD(wat.d)) : "—";
+  updateToday();
 }
 function shortName(p){return p.n.replace(/^(Rifugio|Bivacco|Capanna|Malga) /,"").split(" /")[0]}
+/* the next matching waypoint ahead of you along the line.
+   Anything within 200 m counts as "you are here" rather than "next". */
+function aheadOnRoute(filter,minAhead){
+  if(!here) return null;
+  var lim=(minAhead==null)?200:minAhead;
+  var me=alongRoute(here.lat,here.lon);
+  if(!me) return nearest(filter);
+  var atIt=null, best=null, bd=1e12;
+  PTS.forEach(function(p){
+    if(filter&&!filter(p)) return;
+    if(p.km==null) return;
+    if(dist(here.lat,here.lon,p.lat,p.lon)<lim){ atIt=p; return; }
+    var d=p.km-me.km;
+    if(d<lim) return;                  // behind you, or where you already are
+    if(d<bd){bd=d;best=p}
+  });
+  if(atIt) return {p:atIt,d:0,at:true,along:true};
+  if(!best) return nearest(filter);
+  return {p:best,d:Math.max(0,bd),along:true};
+}
 function nearest(filter){
   if(!here)return null;
   var best=null,bd=1e12;
@@ -1924,7 +2047,7 @@ var TRK={
   maxPts:80000
 };
 var track={t0:0,segs:[]}, recording=false, trkPending=null, trkLast=null;
-var trkDirty=false, trkRejected=0, poops=[];
+var trkDirty=false, trkRejected=0, trkGaps=[], poops=[];
 
 function trkCount(){ var n=0; track.segs.forEach(function(s){n+=s.length}); return n; }
 function trkLength(){
@@ -2014,8 +2137,8 @@ function setRecording(on){
   var b=document.getElementById("btnRec");
   b.classList.toggle("rec",on);
   document.getElementById("recTxt").textContent=on?"Recording":"Record";
-  if(on){ startGPS(); trkLast=null; trkPending=null; }
-  else { trkSave(); }
+  if(on){ startGPS(); trkLast=null; trkPending=null; requestWake(); }
+  else { trkSave(); releaseWake(); }
   if(activeTab==="set") render();
 }
 document.getElementById("btnRec").onclick=function(){
@@ -2048,6 +2171,205 @@ function dropPoop(){
   }).catch(function(){ toast("Dropped, but the save failed"); });
 }
 document.getElementById("btnPoop").onclick=dropPoop;
+
+/* ============================================================
+   5f. CAMPS AND TODAY'S PROGRESS
+   ============================================================ */
+var camps=[];
+function saveCamps(){ return kvPut("camps", JSON.stringify(camps)); }
+function loadCamps(){
+  return kvGet("camps").then(function(s){
+    if(!s) return;
+    try{ camps=JSON.parse(s)||[]; }catch(e){ camps=[]; }
+  }).catch(function(){});
+}
+function campToday(){
+  var d=localDay(Math.round(Date.now()/1000));
+  for(var i=0;i<camps.length;i++) if(camps[i].day===d) return i;
+  return -1;
+}
+/* the most recent camp strictly before a given day — where that day began */
+function lastCampBefore(dayISO){
+  var best=null;
+  camps.forEach(function(c){ if(c.day<dayISO && (!best||c.day>best.day)) best=c; });
+  return best;
+}
+function addCamp(){
+  var lat,lon,src;
+  if(here){ lat=here.lat; lon=here.lon; src="gps"; }
+  else { var c0=toLatLon(W/2,H/2); lat=c0[0]; lon=c0[1]; src="map"; }
+  var ar=alongRouteStatic(lat,lon);
+  camps.push({
+    day:localDay(Math.round(Date.now()/1000)),
+    lat:+lat.toFixed(5), lon:+lon.toFixed(5),
+    km:ar?Math.round(ar.km):null, off:ar?Math.round(ar.off):null,
+    t:Math.round(Date.now()/1000), src:src
+  });
+  camps.sort(function(a,b){ return a.day<b.day?-1:1; });
+  requestDraw(); updateToday();
+  saveCamps().then(function(){
+    toast("Camped here \u2014 tomorrow measures from this point"+
+      (src==="map"?" (no GPS, used map centre)":""));
+    if(activeTab==="set") render();
+  }).catch(function(){ toast("Saved locally only"); });
+}
+function removeCampToday(){
+  var i=campToday();
+  if(i<0) return;
+  camps.splice(i,1);
+  requestDraw(); updateToday(); saveCamps();
+  toast("Camp removed");
+  if(activeTab==="set") render();
+}
+function drawCamps(){
+  if(!camps.length) return;
+  cx.font="17px -apple-system,\"Segoe UI Emoji\",\"Noto Color Emoji\",sans-serif";
+  cx.textAlign="center"; cx.textBaseline="middle";
+  camps.forEach(function(c){
+    var s=toScreen(c.lat,c.lon);
+    if(s[0]<-24||s[0]>W+24||s[1]<-24||s[1]>H+24) return;
+    cx.fillText("\u26FA",s[0],s[1]);
+  });
+  cx.textAlign="start"; cx.textBaseline="alphabetic";
+}
+function dayEndKm(i){
+  var pts=PTS.filter(function(p){return p.d===i});
+  if(!pts.length) return null;
+  return Math.max.apply(null,pts.map(function(p){return p.km}));
+}
+function dayStartKm(i){
+  var iso=DAY_ISO[i];
+  var c=iso?lastCampBefore(iso):null;
+  if(c&&c.km!=null) return c.km;      // where you actually woke up
+  for(var j=i-1;j>=0;j--){
+    var e=dayEndKm(j);
+    if(e!=null) return e;
+  }
+  return 0;
+}
+/* which stage are we on? today's date if it is a trip day, otherwise infer
+   it from how far along the route we actually are. */
+function todayIndex(){
+  var iso=localDay(Math.round(Date.now()/1000));
+  for(var i=0;i<DAY_ISO.length;i++) if(DAY_ISO[i]===iso) return i;
+  if(here){
+    var me=alongRoute(here.lat,here.lon);
+    if(me){
+      for(var j=1;j<DAYS.length;j++){
+        var e=dayEndKm(j);
+        if(e!=null && e>me.km+50) return j;
+      }
+      return DAYS.length-1;
+    }
+  }
+  return -1;
+}
+function updateToday(){
+  var bar=document.getElementById("todaybar");
+  if(!bar) return;
+  var i=todayIndex();
+  if(i<1){ bar.style.display="none"; return; }
+  bar.style.display="flex";
+  var startKm=dayStartKm(i), endKm=dayEndKm(i);
+  var total=(endKm!=null)?Math.max(0,endKm-startKm):0;
+  var me=here?alongRoute(here.lat,here.lon):null;
+  var done=null, left=null, frac=0;
+  if(me&&endKm!=null){
+    done=Math.max(0,Math.min(total,me.km-startKm));
+    left=Math.max(0,endKm-me.km);
+    frac=total?done/total:0;
+  }
+  if(campToday()>=0){ done=total; left=0; frac=1; }
+  var lbl=DAYS[i]?DAYS[i].n:"Today";
+  var txt;
+  if(done!=null){
+    txt='<b>'+lbl+'</b> '+(done/1000).toFixed(1)+' of '+(total/1000).toFixed(1)+' km'+
+      (left>50?' &middot; <span class="left">'+(left/1000).toFixed(1)+' km to go</span>'
+             :' &middot; <span class="done">arrived</span>');
+    if(me&&me.off>300) txt+=' &middot; <span class="off">'+Math.round(me.off)+' m off route</span>';
+  } else {
+    txt='<b>'+lbl+'</b> '+(total/1000).toFixed(1)+' km planned'+
+      (here?'':' &middot; <span class="off">GPS off</span>');
+  }
+  bar.querySelector(".tdtxt").innerHTML=txt;
+  bar.querySelector(".tdfill").style.width=Math.round(frac*100)+"%";
+  var b=document.getElementById("btnCamp");
+  b.textContent=(campToday()>=0)?"\u26FA Undo":"\u26FA Camped";
+  b.classList.toggle("on",campToday()>=0);
+}
+document.getElementById("btnCamp").onclick=function(){
+  if(campToday()>=0) removeCampToday(); else addCamp();
+};
+
+/* ============================================================
+   5e. DAILY TOTALS
+   Planned comes from the surveyed route; walked comes from the
+   recording. Either stands alone if the other is missing.
+   ============================================================ */
+var DAY_ISO=["2026-08-15","2026-08-16","2026-08-17","2026-08-18","2026-08-19","2026-08-20",
+  "2026-08-21","2026-08-22","2026-08-23","2026-08-24","2026-08-25"];
+
+function plannedKm(i){
+  var pts=PTS.filter(function(p){return p.d===i});
+  if(!pts.length) return 0;
+  var end=Math.max.apply(null,pts.map(function(p){return p.km}));
+  var prev=0;
+  for(var j=i-1;j>=0;j--){
+    var q=PTS.filter(function(p){return p.d===j});
+    if(q.length){ prev=Math.max.apply(null,q.map(function(p){return p.km})); break; }
+  }
+  return Math.max(0,end-prev);
+}
+function localDay(sec){
+  var d=new Date(sec*1000);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+
+         String(d.getDate()).padStart(2,"0");
+}
+/* walked distance, ascent and moving time, bucketed by calendar day */
+function walkedByDay(){
+  var out={};
+  if(!track.t0) return out;
+  track.segs.forEach(function(s){
+    for(var i=1;i<s.length;i++){
+      var a=s[i-1], b=s[i];
+      var key=localDay(track.t0+b[3]);
+      if(!out[key]) out[key]={km:0,up:0,down:0,secs:0,pts:0,first:null,last:null};
+      var o=out[key];
+      o.km+=dist(a[0],a[1],b[0],b[1]);
+      if(a[2]!=null&&b[2]!=null){
+        var dz=b[2]-a[2];
+        if(dz>2) o.up+=dz; else if(dz<-2) o.down-=dz;
+      }
+      var dt=b[3]-a[3];
+      if(dt>0&&dt<TRK.gapSec) o.secs+=dt;
+      o.pts++;
+      var t=track.t0+b[3];
+      if(o.first===null||t<o.first) o.first=t;
+      if(o.last===null||t>o.last) o.last=t;
+    }
+  });
+  return out;
+}
+function fmtHrs(s){
+  if(!s) return "—";
+  var m=Math.round(s/60);
+  var h=Math.floor(m/60);
+  m=m%60;                      // round first, then split, or 8h59m30s prints as "8h 60m"
+  return h?(h+"h "+m+"m"):(m+"m");
+}
+function dayLine(i){
+  var pl=plannedKm(i);
+  var w=walkedByDay()[DAY_ISO[i]];
+  var bits=[];
+  if(pl>50) bits.push("plan "+(pl/1000).toFixed(1)+" km");
+  else if(pl>0) bits.push("plan "+(pl/1000).toFixed(1)+" km");
+  if(w&&w.km>50){
+    bits.push("<span style='color:var(--glacier)'>walked "+(w.km/1000).toFixed(1)+" km</span>");
+    if(w.up>30) bits.push("<span style='color:var(--glacier)'>&uarr;"+Math.round(w.up)+" m</span>");
+    if(w.secs>300) bits.push("<span style='color:var(--glacier)'>"+fmtHrs(w.secs)+" moving</span>");
+  }
+  return bits.join(" &middot; ");
+}
 
 /* ============================================================
    5d. YOUR OWN PINS
@@ -2249,12 +2571,42 @@ function render(){
       query.replace(/"/g,"&quot;")+'"></div>';
   }
   if(activeTab==="days"){
+    var wb=walkedByDay(), totW=0, totU=0, nDays=0, totSecs=0;
+    Object.keys(wb).forEach(function(k){
+      totW+=wb[k].km; totU+=wb[k].up; totSecs+=wb[k].secs;
+      if(wb[k].km>300) nDays++;
+    });
+    var totP=0;
+    DAYS.forEach(function(_,i){ totP+=plannedKm(i); });
+    h+='<div class="daygrp"><div class="daybar"><span class="mark"></span>'+
+      '<span class="n">Distance</span><span class="d">'+
+      (totW>300?"walked / planned":"planned")+'</span></div>'+
+      '<div style="padding:11px 12px;display:flex;gap:14px;flex-wrap:wrap;font-family:var(--font-num)">'+
+      '<div><div style="font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--lime-dim);font-family:var(--font-ui);font-weight:600">Planned</div>'+
+      '<div style="font-size:19px">'+(totP/1000).toFixed(1)+' km</div></div>'+
+      (totW>300
+        ? '<div><div style="font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--lime-dim);font-family:var(--font-ui);font-weight:600">Walked</div>'+
+          '<div style="font-size:19px;color:var(--glacier)">'+(totW/1000).toFixed(1)+' km</div></div>'+
+          '<div><div style="font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--lime-dim);font-family:var(--font-ui);font-weight:600">Ascent</div>'+
+          '<div style="font-size:19px;color:var(--glacier)">'+Math.round(totU)+' m</div></div>'+
+          '<div><div style="font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--lime-dim);font-family:var(--font-ui);font-weight:600">Moving</div>'+
+          '<div style="font-size:19px;color:var(--glacier)">'+fmtHrs(totSecs)+'</div></div>'
+        : '<div style="font-size:11.5px;color:var(--lime-dim);align-self:center;font-family:var(--font-ui);max-width:190px">Turn on Record and your walked distance appears here, day by day.</div>')+
+      '</div></div>';
     DAYS.forEach(function(day,i){
       var list=PTS.filter(function(p){return p.d===i&&matches(p)});
       if(!list.length)return;
+      var dl=dayLine(i);
+      if(i===todayIndex()){
+        var eK=dayEndKm(i), sK=dayStartKm(i);
+        var meN=here?alongRoute(here.lat,here.lon):null;
+        if(meN&&eK!=null&&eK>meN.km+50)
+          dl=(dl?dl+' &middot; ':'')+'<span style="color:var(--sign)">'+
+             ((eK-meN.km)/1000).toFixed(1)+' km left</span>';
+      }
       h+='<section class="daygrp"><div class="daybar"><span class="mark"></span>'+
         '<span><span class="n">'+day.n+' · '+day.title+'</span><br>'+
-        '<span style="font-size:11px;color:var(--lime-dim)">'+day.sub+'</span></span>'+
+        '<span style="font-size:11px;color:var(--lime-dim)">'+(dl||day.sub)+'</span></span>'+
         '<span class="d">'+day.date+'</span></div>';
       list.forEach(function(p){h+=rowHTML(p,false)});
       h+='</section>';
@@ -2551,6 +2903,19 @@ function setHTML(){
   '<div class="stat" id="cacheStat">—</div>'+
   '<div class="warn" id="cacheWarn"></div></section>'+
 
+  '<section><h3>Where you slept</h3>'+
+  '<p>Tap <strong>\u26FA Camped</strong> on the today strip when you stop for the night. '+
+  'The next day\'s remaining distance is then measured from where you actually were, not from '+
+  'where the plan said you would be.</p>'+
+  '<div class="stat">'+(camps.length
+    ? camps.map(function(c){
+        return c.day+(c.km!=null?" \u00b7 "+(c.km/1000).toFixed(1)+" km along":"")+
+          (c.off!=null&&c.off>300?" \u00b7 "+Math.round(c.off)+" m off route":"");
+      }).join("<br>")
+    : "No camps logged yet")+'</div>'+
+  (camps.length?'<button class="btn" id="btnCampsClear">Clear the camp log</button>':'')+
+  '</section>'+
+
   '<section><h3>Your pins</h3>'+
   '<p>Camps, lunch spots, viewpoints, anything worth remembering. Tap <strong>\uFF0BPin</strong> on the map, '+
   'drop it at your position or by tapping the map, then tap it later to rename, move or delete.</p>'+
@@ -2567,6 +2932,11 @@ function setHTML(){
   '<section><h3>Your track</h3>'+
   '<p>Records where you actually walked, filtered so a stray GPS fix cannot drag the line '+
   'across a valley. Export the GPX when you are home and drop it straight into Google Earth.</p>'+
+  '<div class="callout"><b>It only records with the app open</b>'+
+  'A web page cannot get GPS fixes once it is closed or the screen locks \u2014 the browser '+
+  'suspends it. Recording now holds the screen awake while it runs, but for a full day in a '+
+  'pocket, record in OsmAnd or your watch and import that file below. Gaps are logged, not '+
+  'papered over.</div>'+
   '<div class="tog"><span>Recording</span><button id="togRec" aria-pressed="'+(recording?"true":"false")+'">'+
   (recording?"On":"Off")+'</button></div>'+
   '<div class="stat" id="trkStat">'+
@@ -2580,8 +2950,15 @@ function setHTML(){
   '<div class="stat">'+poops.length+' \uD83D\uDCA9 marker'+(poops.length===1?'':'s')+'</div>'+
   '<button class="btn go" id="btnTrkGpx">Export track + pins as GPX</button>'+
   (poops.length?'<button class="btn" id="btnPoopUndo">Remove the last \uD83D\uDCA9</button>':'')+
+  '<label class="btn" for="trkgpx" style="display:block">Import a GPX recorded elsewhere</label>'+
+  '<input id="trkgpx" type="file" accept=".gpx,application/gpx+xml,text/xml" style="display:none">'+
   (trkCount()?'<button class="btn" id="btnTrkClear">Erase the recorded track</button>':'')+
   '</section>'+
+
+  '<section><h3>Elevation profile</h3>'+
+  '<p>The whole route as a profile, shaded by steepness, with your position on it and '+
+  'ascent remaining for the day. Also reachable from the \u26F0 button on the map.</p>'+
+  '<a class="btn go" href="./profile.html">Open the profile</a></section>'+
 
   '<section><h3>3D terrain</h3>'+
   '<p>Drapes this map over real elevation for the whole route. Scrub along the line, or follow your '+
@@ -2654,6 +3031,29 @@ function setHTML(){
 }
 
 var wakeOn=false, wakeLock=null;
+/* Browsers release a screen wake lock the moment the page is hidden and never
+   hand it back on their own. Without re-requesting it, "keep screen awake"
+   silently stops working the first time you pocket the phone. */
+function requestWake(){
+  if(!wakeOn && !recording) return;
+  if(wakeLock) return;
+  try{
+    if(!navigator.wakeLock) return;
+    navigator.wakeLock.request("screen").then(function(w){
+      wakeLock=w;
+      w.addEventListener("release",function(){ wakeLock=null; });
+    }).catch(function(){});
+  }catch(e){}
+}
+function releaseWake(){
+  if(wakeLock && !recording && !wakeOn){
+    try{ wakeLock.release(); }catch(e){}
+    wakeLock=null;
+  }
+}
+document.addEventListener("visibilitychange",function(){
+  if(!document.hidden) requestWake();
+});
 
 function preflight(){
   var host=document.getElementById("preflight");
@@ -2720,8 +3120,7 @@ function wireSetup(){
   var wb=document.getElementById("togWake");
   if(wb) wb.onclick=function(){
     wakeOn=!wakeOn; this.setAttribute("aria-pressed",wakeOn?"true":"false"); this.textContent=wakeOn?"On":"Off";
-    if(wakeOn){ try{ navigator.wakeLock.request("screen").then(function(w){wakeLock=w}).catch(function(){}); }catch(e){} }
-    else if(wakeLock){ try{wakeLock.release()}catch(e){} wakeLock=null; }
+    if(wakeOn) requestWake(); else releaseWake();
   };
   var c=document.getElementById("btnCache"); if(c) c.onclick=cacheTiles;
   var cl=document.getElementById("btnClear"); if(cl) cl.onclick=function(){
@@ -2737,9 +3136,16 @@ function wireSetup(){
   var tr=document.getElementById("togRec");
   if(tr) tr.onclick=function(){ setRecording(!recording); };
   var tg=document.getElementById("btnTrkGpx"); if(tg) tg.onclick=exportTrackGPX;
+  var ti=document.getElementById("trkgpx"); if(ti) ti.onchange=importRecordedGPX;
   var pu=document.getElementById("btnPoopUndo");
   if(pu) pu.onclick=function(){
     poops.pop(); setPoopN(); savePoops(); requestDraw(); render();
+  };
+  var cc=document.getElementById("btnCampsClear");
+  if(cc) cc.onclick=function(){
+    if(cc.dataset.sure==="1"){
+      camps=[]; saveCamps(); requestDraw(); updateToday(); render(); toast("Camp log cleared");
+    } else { cc.dataset.sure="1"; cc.textContent="Tap again to clear"; }
   };
   var pc=document.getElementById("btnPinsClear");
   if(pc) pc.onclick=function(){
@@ -2867,6 +3273,7 @@ function applyTrack(pts,origN,quiet){
   ROUTE.__real=true;
   ROUTE.__n=origN||pts.length;
   ROUTE.__src="loaded";
+  buildRouteKm();
   reprojectFracs();
   setAttrib();
   if(!quiet) fitAll(); else { requestDraw(); drawRail(); }
@@ -2887,6 +3294,7 @@ function forgetTrack(){
   return kvDel("route").then(function(){
     ROUTE=OFFICIAL.slice();
     ROUTE.__real=true; ROUTE.__n=14219; ROUTE.__src="official";
+    buildRouteKm();
     reprojectFracs(); setAttrib(); fitAll();
     if(activeTab==="set") render();
   });
@@ -3051,6 +3459,59 @@ function exportGPX(){
   setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
 }
 
+/* Merge a track recorded elsewhere (OsmAnd, Gaia, a watch) into this one.
+   This is the honest answer to background recording: a web page cannot get
+   fixes while it is closed, but it can absorb a file from something that can. */
+function importRecordedGPX(ev){
+  var f=ev.target.files&&ev.target.files[0];
+  if(!f) return;
+  f.text().then(function(txt){
+    var doc=new DOMParser().parseFromString(txt,"application/xml");
+    var segs=doc.getElementsByTagName("trkseg");
+    var added=0, newSegs=[], t0=track.t0||0;
+    var all=[];
+    for(var s=0;s<segs.length;s++){
+      var pts=segs[s].getElementsByTagName("trkpt"), seg=[];
+      for(var i=0;i<pts.length;i++){
+        var la=parseFloat(pts[i].getAttribute("lat")), lo=parseFloat(pts[i].getAttribute("lon"));
+        if(!isFinite(la)||!isFinite(lo)) continue;
+        var eN=pts[i].getElementsByTagName("ele")[0];
+        var tN=pts[i].getElementsByTagName("time")[0];
+        var tt=tN?Date.parse(tN.textContent)/1000:null;
+        seg.push({lat:la,lon:lo,ele:eN?parseFloat(eN.textContent):null,t:tt});
+      }
+      if(seg.length) all.push(seg);
+    }
+    if(!all.length) throw new Error("no track segments in that file");
+    // base time: earliest stamp we can find, else keep the existing one
+    var stamps=[];
+    all.forEach(function(sg){ sg.forEach(function(p){ if(p.t) stamps.push(p.t); }); });
+    if(!t0) t0 = stamps.length?Math.floor(Math.min.apply(null,stamps)):Math.round(Date.now()/1000);
+    if(stamps.length && Math.min.apply(null,stamps)<t0) t0=Math.floor(Math.min.apply(null,stamps));
+    track.t0=t0;
+    all.forEach(function(sg){
+      var out=[], last=null, synth=0;
+      sg.forEach(function(p){
+        if(last && dist(last.lat,last.lon,p.lat,p.lon)<TRK.minStep) return;
+        var dt=p.t?Math.round(p.t-t0):(synth+=10);
+        out.push([+p.lat.toFixed(5),+p.lon.toFixed(5),p.ele==null?null:Math.round(p.ele),dt]);
+        last=p; added++;
+      });
+      if(out.length>1) newSegs.push(out);
+    });
+    track.segs=track.segs.concat(newSegs);
+    // keep segments in time order so daily totals come out right
+    track.segs.sort(function(a,b){ return (a[0]?a[0][3]:0)-(b[0]?b[0][3]:0); });
+    trkDirty=true;
+    return trkSave().then(function(){
+      requestDraw(); render();
+      toast("Imported "+added+" points in "+newSegs.length+" segment"+(newSegs.length===1?"":"s"));
+    });
+  }).catch(function(e){
+    toast("Could not import — "+((e&&e.message)||"unreadable file"));
+  });
+}
+
 /* ---- Recorded track out, for Google Earth ---- */
 function isoOf(sec){ return new Date(sec*1000).toISOString().replace(/\.\d{3}Z$/,"Z"); }
 function exportTrackGPX(){
@@ -3059,6 +3520,12 @@ function exportTrackGPX(){
     '<gpx version="1.1" creator="AV2 Field Map" xmlns="http://www.topografix.com/GPX/1/1">\n'+
     '<metadata><name>Alta Via 2 — recorded track</name>'+
     (track.t0?'<time>'+isoOf(track.t0)+'</time>':'')+'</metadata>\n';
+  camps.forEach(function(c,i){
+    x+='<wpt lat="'+c.lat+'" lon="'+c.lon+'">'+
+       '<name>'+esc("\u26FA Night "+(i+1)+" — "+c.day)+'</name>'+
+       '<time>'+isoOf(c.t)+'</time>'+
+       '<sym>Campground</sym><type>camp</type></wpt>\n';
+  });
   myPins.forEach(function(o){
     var c=catOf(o.cat);
     x+='<wpt lat="'+o.lat+'" lon="'+o.lon+'">'+
@@ -3139,7 +3606,9 @@ var swState="not registered";
 })();
 
 resize();
-Promise.all([restoreTrack(), loadPinFix(), trkLoad(), loadPoops(), loadMyPins()]).then(function(){
+buildRouteKm();
+Promise.all([restoreTrack(), loadPinFix(), trkLoad(), loadPoops(), loadMyPins(), loadCamps()]).then(function(){
+  updateToday();
   setPoopN();
   if(lsGet("av2rec")==="1"){ setRecording(true); }
   reprojectFracs();
